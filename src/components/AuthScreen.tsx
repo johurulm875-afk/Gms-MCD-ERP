@@ -15,8 +15,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Login form state
-  const [loginUsername, setLoginUsername] = useState<string>('admin@gms.com');
-  const [loginPassword, setLoginPassword] = useState<string>('ruma7862');
+  const [loginUsername, setLoginUsername] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
 
   // Registration form state
   const [regFullName, setRegFullName] = useState<string>('');
