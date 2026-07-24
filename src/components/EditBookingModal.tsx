@@ -49,6 +49,12 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData) return;
+
+    if (Number(formData.issue_qty || 0) > Number(formData.receive_qty || 0)) {
+      alert(`❌ Issue Qty (${formData.issue_qty}) cannot exceed Receive Qty (${formData.receive_qty})! (ইস্যু পরিমাণ রিসিভ পরিমাণের চেয়ে বেশি হতে পারবে না)`);
+      return;
+    }
+
     try {
       setIsSaving(true);
       await onUpdateBooking(formData);
@@ -258,31 +264,47 @@ export const EditBookingModal: React.FC<EditBookingModalProps> = ({
             </div>
 
             {/* Issue Qty & Date */}
-            <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 space-y-2">
-              <label className="block text-xs font-bold text-blue-900">Issue Qty & Date</label>
-              <input
-                type="number"
-                step="any"
-                value={formData.issue_qty}
-                onChange={(e) => handleChange('issue_qty', parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Issue Qty"
-              />
-              <input
-                type="text"
-                value={formData.issue_date}
-                onChange={(e) => handleChange('issue_date', e.target.value)}
-                placeholder="Issue Date (DD.MM.YYYY)"
-                className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <input
-                type="text"
-                value={formData.issue_challan}
-                onChange={(e) => handleChange('issue_challan', e.target.value)}
-                placeholder="Issue Challan #"
-                className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            {(() => {
+              const isExceeded = Number(formData.issue_qty || 0) > Number(formData.receive_qty || 0);
+              return (
+                <div className={`p-3 rounded-xl border space-y-2 ${
+                  isExceeded ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'
+                }`}>
+                  <label className={`block text-xs font-bold ${isExceeded ? 'text-red-900' : 'text-blue-900'}`}>
+                    Issue Qty & Date
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={formData.issue_qty}
+                    onChange={(e) => handleChange('issue_qty', parseFloat(e.target.value) || 0)}
+                    className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 ${
+                      isExceeded ? 'border-red-500 focus:ring-red-500 ring-1 ring-red-400' : 'border-blue-300 focus:ring-blue-500'
+                    }`}
+                    placeholder="Issue Qty"
+                  />
+                  {isExceeded && (
+                    <p className="text-[11px] font-bold text-red-600 bg-red-100 p-1.5 rounded border border-red-200">
+                      ❌ Issue ({formData.issue_qty}) exceeds Received Qty ({formData.receive_qty})
+                    </p>
+                  )}
+                  <input
+                    type="text"
+                    value={formData.issue_date}
+                    onChange={(e) => handleChange('issue_date', e.target.value)}
+                    placeholder="Issue Date (DD.MM.YYYY)"
+                    className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={formData.issue_challan}
+                    onChange={(e) => handleChange('issue_challan', e.target.value)}
+                    placeholder="Issue Challan #"
+                    className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              );
+            })()}
 
           </div>
 

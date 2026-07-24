@@ -404,6 +404,23 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validation: Issue Qty cannot exceed Receive Qty
+    const invalidRow = (Object.values(rowStates) as ItemRowState[]).find(
+      r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0)
+    );
+
+    if (invalidRow) {
+      const matchedItem = allItems.find(i => i.id === invalidRow.id);
+      const maxAvailable = Number(invalidRow.receive_qty || 0);
+      const attemptedIssue = Number(invalidRow.issue_qty || 0);
+      const styleStr = matchedItem?.style ? ` for style ${matchedItem.style}` : '';
+      const colStr = matchedItem?.colour ? ` (${matchedItem.colour})` : '';
+      alert(
+        `❌ Issue Qty (${attemptedIssue}) cannot exceed Received Qty (${maxAvailable})${styleStr}${colStr}!\n\n(ইস্যু পরিমাণ রিসিভ পরিমাণের (165) চেয়ে বেশি দেওয়া যাবে না)`
+      );
+      return;
+    }
+
     const updatesToSave: QuickUpdatePayload[] = (Object.values(rowStates) as ItemRowState[]).map(r => {
       const addedRecvTotal = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
       const addedIssTotal = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
@@ -983,26 +1000,33 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                       }`}>
                         <div className="space-y-1.5">
                           {/* Row Top: Prev Issue & Today Issue */}
-                          <div className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="text-slate-500 font-medium">
-                              Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_issue_qty}</strong>
-                            </span>
+                          {(() => {
+                            const isIssueExceeded = Number(state.issue_qty || 0) > Number(state.receive_qty || 0);
+                            return (
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-slate-500 font-medium">
+                                  Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_issue_qty}</strong>
+                                </span>
 
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase">+ Today Issue:</span>
-                              <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                value={state.today_issue_qty}
-                                onChange={(e) => handleTodayIssueChange(item.id, e.target.value)}
-                                placeholder="0"
-                                className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                                  isDark ? 'bg-slate-950 border-blue-600 text-blue-300' : 'bg-white border-blue-400 text-blue-900'
-                                }`}
-                              />
-                            </div>
-                          </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase">+ Today Issue:</span>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    value={state.today_issue_qty}
+                                    onChange={(e) => handleTodayIssueChange(item.id, e.target.value)}
+                                    placeholder="0"
+                                    className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 ${
+                                      isIssueExceeded
+                                        ? 'bg-red-100 border-red-500 text-red-900 focus:ring-red-500 ring-2 ring-red-400'
+                                        : (isDark ? 'bg-slate-950 border-blue-600 text-blue-300 focus:ring-blue-500' : 'bg-white border-blue-400 text-blue-900 focus:ring-blue-500')
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* Inputs: Challan No & Batch No */}
                           <div className="grid grid-cols-2 gap-1.5">
@@ -1044,9 +1068,20 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                               <span>Issue Sub-batch breakdown (+)</span>
                             </button>
 
-                            <span className="text-[10px] font-mono text-blue-700 dark:text-blue-300 font-bold">
-                              Total: {state.issue_qty} {item.yds}
-                            </span>
+                            <div className="flex flex-col items-end">
+                              <span className={`text-[10px] font-mono font-bold ${
+                                Number(state.issue_qty || 0) > Number(state.receive_qty || 0)
+                                  ? 'text-red-600 dark:text-red-400 font-black'
+                                  : 'text-blue-700 dark:text-blue-300'
+                              }`}>
+                                Total: {state.issue_qty} {item.yds}
+                              </span>
+                              {Number(state.issue_qty || 0) > Number(state.receive_qty || 0) && (
+                                <span className="text-[10px] font-bold text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-950/90 px-1.5 py-0.5 rounded border border-red-300 mt-0.5">
+                                  ❌ Exceeds Received Qty ({state.receive_qty})
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {/* Render Sub-Batches List if created */}

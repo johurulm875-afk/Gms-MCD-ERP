@@ -174,6 +174,11 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
         const bQty = Number(row.booking_qty) || 0;
         const rQty = Number(formData.receive_qty) || 0;
         const iQty = Number(formData.issue_qty) || 0;
+
+        if (iQty > rQty) {
+          throw new Error(`❌ Issue Qty (${iQty}) cannot exceed Receive Qty (${rQty})! (ইস্যু পরিমাণ রিসিভ পরিমাণের চেয়ে বেশি হতে পারবে না)`);
+        }
+
         const balQty = rQty > 0 ? Math.max(0, rQty - iQty) : 0;
         const col = row.colour.trim().toUpperCase();
         const tCount = row.thread_count || formData.thread_count || '40/2';

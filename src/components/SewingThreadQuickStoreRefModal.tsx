@@ -208,6 +208,23 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Check if any row has issue_qty > receive_qty
+    const invalidRow = (Object.values(rowStates) as SewingRowState[]).find(
+      r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0)
+    );
+
+    if (invalidRow) {
+      const matchedItem = allItems.find(i => i.id === invalidRow.id);
+      const maxAvailable = Number(invalidRow.receive_qty || 0);
+      const attemptedIssue = Number(invalidRow.issue_qty || 0);
+      const styleStr = matchedItem?.style ? ` for style ${matchedItem.style}` : '';
+      const colStr = matchedItem?.colour || matchedItem?.color ? ` (${matchedItem?.colour || matchedItem?.color})` : '';
+      alert(
+        `❌ Issue Qty (${attemptedIssue}) cannot exceed Received Qty (${maxAvailable})${styleStr}${colStr}!\n\n(ইস্যু পরিমাণ রিসিভ পরিমাণের চেয়ে বেশি দেওয়া যাবে না)`
+      );
+      return;
+    }
+
     const updatesToSave: QuickUpdatePayload[] = (Object.values(rowStates) as SewingRowState[]).map(r => {
       const addedRecvTotal = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
       const addedIssTotal = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
@@ -658,51 +675,67 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       </td>
 
                       {/* ISSUE CELL */}
-                      <td className={`py-2 px-3 align-top border ${
-                        isDark ? 'bg-blue-950/20 border-slate-800' : 'bg-blue-50/40 border-slate-300'
-                      }`}>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="text-slate-500 font-medium">
-                              Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_issue_qty}</strong>
-                            </span>
+                      {(() => {
+                        const isIssueExceeded = Number(state.issue_qty || 0) > Number(state.receive_qty || 0);
+                        return (
+                          <td className={`py-2 px-3 align-top border ${
+                            isIssueExceeded
+                              ? 'bg-red-50/80 dark:bg-red-950/40 border-red-300 dark:border-red-800'
+                              : (isDark ? 'bg-blue-950/20 border-slate-800' : 'bg-blue-50/40 border-slate-300')
+                          }`}>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-slate-500 font-medium">
+                                  Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_issue_qty}</strong>
+                                </span>
 
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase">+ Today Issue:</span>
-                              <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                value={state.today_issue_qty}
-                                onChange={(e) => handleTodayIssueChange(item.id, e.target.value)}
-                                placeholder="0"
-                                className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                                  isDark ? 'bg-slate-950 border-blue-600 text-blue-300' : 'bg-white border-blue-400 text-blue-900'
-                                }`}
-                              />
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase">+ Today Issue:</span>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    value={state.today_issue_qty}
+                                    onChange={(e) => handleTodayIssueChange(item.id, e.target.value)}
+                                    placeholder="0"
+                                    className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 ${
+                                      isIssueExceeded
+                                        ? 'bg-red-100 border-red-500 text-red-900 focus:ring-red-500 ring-2 ring-red-400'
+                                        : (isDark ? 'bg-slate-950 border-blue-600 text-blue-300 focus:ring-blue-500' : 'bg-white border-blue-400 text-blue-900 focus:ring-blue-500')
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-bold uppercase text-slate-500">Issue Challan</label>
+                                <input
+                                  type="text"
+                                  value={state.issue_challan}
+                                  onChange={(e) => handleFieldChange(item.id, 'issue_challan', e.target.value)}
+                                  placeholder="Challan #"
+                                  className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                                    isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                                  }`}
+                                />
+                              </div>
+
+                              <div className="flex flex-col items-end pt-0.5">
+                                <span className={`text-[10px] font-mono font-bold ${
+                                  isIssueExceeded ? 'text-red-600 dark:text-red-400 font-black' : 'text-blue-700 dark:text-blue-300'
+                                }`}>
+                                  Total Issue: {state.issue_qty}
+                                </span>
+                                {isIssueExceeded && (
+                                  <span className="text-[10px] font-bold text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-950/90 px-1.5 py-0.5 rounded border border-red-300 mt-1">
+                                    ❌ Exceeds Received Qty ({state.receive_qty})
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold uppercase text-slate-500">Issue Challan</label>
-                            <input
-                              type="text"
-                              value={state.issue_challan}
-                              onChange={(e) => handleFieldChange(item.id, 'issue_challan', e.target.value)}
-                              placeholder="Challan #"
-                              className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                                isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                              }`}
-                            />
-                          </div>
-
-                          <div className="flex items-center justify-end pt-0.5">
-                            <span className="text-[10px] font-mono text-blue-700 dark:text-blue-300 font-bold">
-                              Total Issue: {state.issue_qty}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
+                          </td>
+                        );
+                      })()}
 
                       {/* Balance Qty */}
                       <td className={`py-2.5 px-3 align-top text-right border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
