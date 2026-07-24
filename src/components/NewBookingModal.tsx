@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TwillTapeItem } from '../types';
-import { X, Plus, Package, Tag, Calendar, Save, Hash, Layers } from 'lucide-react';
+import { X, Plus, Package, Tag, Save, CheckCircle2 } from 'lucide-react';
 
 interface NewBookingModalProps {
   isOpen: boolean;
@@ -60,6 +60,38 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customBuyer, setCustomBuyer] = useState('');
   const [useCustomBuyer, setUseCustomBuyer] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [savedCount, setSavedCount] = useState(1);
+
+  const doResetForm = () => {
+    setFormData({
+      buyer_name: existingBuyers[0] || 'Stanley Stella',
+      date: getTodayFormatted(),
+      booking_challan: '',
+      style: '',
+      order_no: 'PO No ',
+      store_ref: 'GMST-FB-26-',
+      job_no: '',
+      colour: '',
+      item_name: 'H.B. TAPE',
+      cm: '1.2CM',
+      yds: 'YDS',
+      booking_qty: 0,
+      receive_qty: 0,
+      receive_date: '',
+      receive_challan: '',
+      issue_qty: 0,
+      issue_date: '',
+      issue_challan: '',
+      balance_qty: 0,
+      remarks: ''
+    });
+    setColourRows([
+      { id: '1', colour: '', booking_qty: '' }
+    ]);
+    setCustomBuyer('');
+    setUseCustomBuyer(false);
+  };
 
   const handleAddColourRow = () => {
     setColourRows(prev => [
@@ -86,8 +118,7 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const processSubmit = async (shouldCloseModal: boolean) => {
     try {
       setIsSubmitting(true);
       const finalBuyer = useCustomBuyer ? customBuyer.trim() : formData.buyer_name;
@@ -119,7 +150,20 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
 
       await onAddBooking(itemsToInsert.length === 1 ? itemsToInsert[0] : itemsToInsert);
 
-      onClose();
+      // Show prominent centered success popup
+      setSavedCount(itemsToInsert.length);
+      setShowSuccessPopup(true);
+
+      // Reset form immediately
+      doResetForm();
+
+      setTimeout(() => {
+        setShowSuccessPopup(false);
+        if (shouldCloseModal) {
+          onClose();
+        }
+      }, 1200);
+
     } catch (err) {
       console.error("Error creating booking:", err);
     } finally {
@@ -127,10 +171,34 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await processSubmit(false); // Default to Save & Add Next
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+      
+      {/* Center Success Popup Overlay */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-2xl border-2 border-emerald-500 text-center max-w-sm mx-auto animate-in zoom-in-90 duration-200">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner ring-4 ring-emerald-50">
+              <CheckCircle2 className="w-10 h-10 stroke-[2.5]" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-1">Saved Successfully!</h3>
+            <p className="text-sm font-bold text-emerald-700 bg-emerald-50 py-1.5 px-3 rounded-full inline-block border border-emerald-200 mb-2">
+              {savedCount} Item(s) Posted / সফলভাবে সেভ হয়েছে!
+            </p>
+            <p className="text-xs text-slate-500 font-semibold">
+              Form rows cleared! Next booking form ready.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
@@ -141,7 +209,7 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold">New Booking Entry</h2>
-              <p className="text-xs text-slate-300">Add a new twill tape / accessory booking record to Supabase</p>
+              <p className="text-xs text-slate-300">Continuous Batch Booking Enabled (Auto Blank on Save)</p>
             </div>
           </div>
           <button
@@ -459,7 +527,7 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
+          <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
               onClick={onClose}
@@ -468,14 +536,25 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
               Cancel
             </button>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm flex items-center gap-2 transition-all active:scale-98 disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              {isSubmitting ? 'Saving to Supabase...' : 'Save New Booking'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => processSubmit(true)}
+                className="px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-all active:scale-98 disabled:opacity-50"
+              >
+                Save & Close (সেভ ও বন্ধ করুন)
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-6 py-2.5 text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-98 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {isSubmitting ? 'Saving...' : 'Save & Add Next (সেভ ও নতুন বুকিং)'}
+              </button>
+            </div>
           </div>
 
         </form>

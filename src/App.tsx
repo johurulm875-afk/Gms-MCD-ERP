@@ -34,10 +34,21 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Auth state
+  // Auth state with 12-hour auto logout logic
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     const saved = localStorage.getItem('erp_user');
+    const loginTimeStr = localStorage.getItem('erp_login_time');
+
     if (saved) {
+      if (loginTimeStr) {
+        const loginTime = parseInt(loginTimeStr, 10);
+        const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+        if (!isNaN(loginTime) && Date.now() - loginTime >= TWELVE_HOURS_MS) {
+          localStorage.removeItem('erp_user');
+          localStorage.removeItem('erp_login_time');
+          return null;
+        }
+      }
       try { 
         const parsed = JSON.parse(saved);
         if (parsed.id_card_no === 'SYS-001' || parsed.id_card_no === 'SYS-002') {
@@ -58,9 +69,36 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('erp_user', JSON.stringify(currentUser));
+      if (!localStorage.getItem('erp_login_time')) {
+        localStorage.setItem('erp_login_time', Date.now().toString());
+      }
     } else {
       localStorage.removeItem('erp_user');
+      localStorage.removeItem('erp_login_time');
     }
+  }, [currentUser]);
+
+  // Periodic check for 12 hours auto-logout
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const checkSessionExpiry = () => {
+      const loginTimeStr = localStorage.getItem('erp_login_time');
+      if (loginTimeStr) {
+        const loginTime = parseInt(loginTimeStr, 10);
+        const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+        if (!isNaN(loginTime) && Date.now() - loginTime >= TWELVE_HOURS_MS) {
+          localStorage.removeItem('erp_user');
+          localStorage.removeItem('erp_login_time');
+          setCurrentUser(null);
+          showToast('Session expired after 12 hours. Please log in again.', 'info');
+        }
+      }
+    };
+
+    // Check every 30 seconds
+    const interval = setInterval(checkSessionExpiry, 30000);
+    return () => clearInterval(interval);
   }, [currentUser]);
 
   // Active ERP Tab
@@ -1118,7 +1156,14 @@ export default function App() {
 
   // IF NOT LOGGED IN -> SHOW AUTH SCREEN
   if (!currentUser) {
-    return <AuthScreen onLoginSuccess={(user) => setCurrentUser(user)} />;
+    return (
+      <AuthScreen 
+        onLoginSuccess={(user) => {
+          localStorage.setItem('erp_login_time', Date.now().toString());
+          setCurrentUser(user);
+        }} 
+      />
+    );
   }
 
   const isLight = theme === 'light';
