@@ -51,17 +51,8 @@ export default function App() {
         return parsed;
       } catch (e) { return null; }
     }
-    // Default logged-in user: Md. Johurul Islam
-    return {
-      id: 'usr_johurul',
-      username: 'admin@gms.com',
-      full_name: 'Md. Johurul Islam',
-      designation: 'System Administrator & Developer',
-      id_card_no: 'Tst-1024',
-      sector: 'GMS MCD & ACC. Dept.',
-      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-      role: 'ADMINISTRATOR'
-    };
+    // No logged in user by default -> Show Login Page first
+    return null;
   });
 
   useEffect(() => {
