@@ -1,0 +1,6 @@
+{
+  "name": "GMS MCD ERP SYSTEM",
+  "description": "GMS MCD ERP SYSTEM - Real-time textile store & accessories inventory management with Supabase integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
