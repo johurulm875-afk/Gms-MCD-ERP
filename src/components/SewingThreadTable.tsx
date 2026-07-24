@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 import { SewingThreadItem, StatusFilter, TransactionLog, UserProfile, QuickUpdatePayload, AppTheme } from '../types';
 import { canUserModifyData } from '../utils/permissionHelper';
 import { SewingThreadNewBookingModal } from './SewingThreadNewBookingModal';
@@ -135,36 +135,196 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
   };
 
   const exportToCSV = () => {
-    const exportData = filteredItems.map(i => ({
-      ID: i.id,
-      buyer: i.buyer_name || i.buyer || '',
-      job_no: i.job_no || '',
-      style: i.style || '',
-      order_no: i.order_no || '',
-      sr_gt: i.sr_gt || '',
-      s_thread_ref: i.s_thread_ref || i.store_ref || '',
-      count: i.thread_count || i.count || '',
-      meter: i.meter || '',
-      per_body_consm: i.per_body_consm || '',
-      colour: i.colour || i.color || '',
-      pantone: i.shade_no || i.pantone || '',
-      booking_qty: i.booking_qty || 0,
-      rcvd_date: i.receive_date || i.rcvd_date || '',
-      rcvd_challan: i.receive_challan || i.rcvd_challan || '',
-      receive_qty: i.receive_qty || 0,
-      issue_date: i.issue_date || '',
-      issue_challan: i.issue_challan || '',
-      issue_qty: i.issue_qty || 0,
-      balance_qty: i.balance_qty || 0,
-      supplier: i.supplier || '',
-      qc_not_ok: i.qc_not_ok ? 'YES' : 'NO',
-      remarks: i.remarks || ''
-    }));
+    const headers = [
+      'ID',
+      'Buyer Name',
+      'Job No',
+      'Style',
+      'Order No / PO',
+      'SR / GT',
+      'Store Ref',
+      'Thread Count',
+      'Meter / Cone',
+      'Per Body Consm',
+      'Colour',
+      'Shade / Pantone',
+      'Booking Qty',
+      'Receive Date',
+      'Receive Challan',
+      'Receive Qty',
+      'Issue Date',
+      'Issue Challan',
+      'Issue Qty',
+      'Balance Qty',
+      'Supplier',
+      'QC Status',
+      'Remarks'
+    ];
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
+    const createStyledWorksheet = (itemList: SewingThreadItem[]) => {
+      const dataRows = itemList.map(i => [
+        i.id,
+        i.buyer_name || i.buyer || '',
+        i.job_no || '',
+        i.style || '',
+        i.order_no || '',
+        i.sr_gt || '',
+        i.s_thread_ref || i.store_ref || '',
+        i.thread_count || i.count || '',
+        i.meter || '',
+        i.per_body_consm || '',
+        i.colour || i.color || '',
+        i.shade_no || i.pantone || '',
+        Number(i.booking_qty) || 0,
+        i.receive_date || i.rcvd_date || '',
+        i.receive_challan || i.rcvd_challan || '',
+        Number(i.receive_qty) || 0,
+        i.issue_date || '',
+        i.issue_challan || '',
+        Number(i.issue_qty) || 0,
+        Number(i.balance_qty) || 0,
+        i.supplier || '',
+        i.qc_not_ok ? 'QC NOT OK' : 'QC OK',
+        i.remarks || ''
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+
+      // Row Heights
+      ws['!rows'] = [
+        { hpt: 28 }, // Header row
+        ...itemList.map(() => ({ hpt: 20 })) // Data rows
+      ];
+
+      // Column Widths calculation
+      const colWidths = headers.map((h, colIdx) => {
+        let maxLen = h.length;
+        dataRows.forEach(row => {
+          const val = row[colIdx] != null ? String(row[colIdx]) : '';
+          if (val.length > maxLen) maxLen = val.length;
+        });
+        return { wch: Math.min(Math.max(maxLen + 4, 12), 35) };
+      });
+      ws['!cols'] = colWidths;
+
+      // Styling parameters
+      const thinBorder = {
+        top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+        bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+        left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+        right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+      };
+
+      const headerStyle = {
+        fill: { fgColor: { rgb: '1E3A8A' } }, // Deep Navy
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+        border: {
+          top: { style: 'medium', color: { rgb: '1E3A8A' } },
+          bottom: { style: 'medium', color: { rgb: '1E3A8A' } },
+          left: { style: 'thin', color: { rgb: '3B82F6' } },
+          right: { style: 'thin', color: { rgb: '3B82F6' } }
+        }
+      };
+
+      // 1. Style Header Cells
+      headers.forEach((_, c) => {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
+        if (ws[cellRef]) {
+          ws[cellRef].s = headerStyle;
+        }
+      });
+
+      // 2. Style Data Cells
+      itemList.forEach((item, rowIdx) => {
+        const r = rowIdx + 1; // Row 0 is header
+        const bookingQty = Number(item.booking_qty) || 0;
+        const receiveQty = Number(item.receive_qty) || 0;
+
+        // Unreceived or pending receive check
+        const isUnreceived = receiveQty < bookingQty || receiveQty === 0;
+        const isZeroReceive = receiveQty === 0;
+
+        headers.forEach((colName, c) => {
+          const cellRef = XLSX.utils.encode_cell({ r, c });
+          if (!ws[cellRef]) return;
+
+          const isBookingQtyCol = colName === 'Booking Qty';
+          const isColourCol = colName === 'Colour';
+          const isNumericCol = ['Booking Qty', 'Receive Qty', 'Issue Qty', 'Balance Qty'].includes(colName);
+          const isCenterCol = ['ID', 'QC Status', 'Receive Date', 'Issue Date', 'Thread Count'].includes(colName);
+
+          // Default styling
+          let fgColor = rowIdx % 2 === 0 ? 'FFFFFF' : 'F9FAFB';
+          let fontColor = '1F2937';
+          let isBold = false;
+
+          // Apply Yellow Highlights for Unreceived Bookings ONLY on 'Booking Qty' and 'Colour'
+          if (isUnreceived) {
+            if (isBookingQtyCol) {
+              fgColor = 'FFFF00'; // Bright Yellow
+              fontColor = '991B1B'; // Bold Dark Red text
+              isBold = true;
+            } else if (isColourCol) {
+              fgColor = 'FFFF00'; // Bright Yellow for Colour
+              fontColor = '1F2937';
+              isBold = true;
+            }
+          }
+
+          ws[cellRef].s = {
+            fill: { fgColor: { rgb: fgColor } },
+            font: { name: 'Calibri', sz: 10, bold: isBold, color: { rgb: fontColor } },
+            border: thinBorder,
+            alignment: {
+              vertical: 'center',
+              horizontal: isNumericCol ? 'right' : (isCenterCol ? 'center' : 'left'),
+              wrapText: true
+            }
+          };
+        });
+      });
+
+      return ws;
+    };
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "SewingThread");
+
+    // 1. All Items Master Sheet
+    const wsMaster = createStyledWorksheet(filteredItems);
+    XLSX.utils.book_append_sheet(wb, wsMaster, "All Sewing Threads");
+
+    // 2. Separate Sheets for Each Buyer
+    const buyerMap: Record<string, SewingThreadItem[]> = {};
+    filteredItems.forEach(item => {
+      const bName = (item.buyer_name || item.buyer || 'General Buyer').trim();
+      if (!buyerMap[bName]) {
+        buyerMap[bName] = [];
+      }
+      buyerMap[bName].push(item);
+    });
+
+    Object.keys(buyerMap).forEach(bName => {
+      const buyerItems = buyerMap[bName];
+      const wsBuyer = createStyledWorksheet(buyerItems);
+
+      // Clean sheet name (Excel 31 char limit, no invalid chars : \ / ? * [ ])
+      let safeName = bName.replace(/[:\\/?*\[\]]/g, '').trim().slice(0, 30);
+      if (!safeName) safeName = 'Buyer';
+
+      // Avoid duplicate sheet names
+      let finalSheetName = safeName;
+      let counter = 1;
+      while (wb.SheetNames.includes(finalSheetName)) {
+        finalSheetName = `${safeName.slice(0, 25)}_${counter}`;
+        counter++;
+      }
+
+      XLSX.utils.book_append_sheet(wb, wsBuyer, finalSheetName);
+    });
+
     XLSX.writeFile(wb, `sewing_thread_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('Excel downloaded with styled sheets & yellow highlighted unreceived bookings!', 'success');
   };
 
   // Internal save fallback for quick updates if onSaveQuickUpdates is not passed directly

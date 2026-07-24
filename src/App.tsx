@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 import { supabase } from './supabaseClient';
 import { 
   TwillTapeItem, SewingThreadItem, DrawstringItem, PlanningItem, UserProfile, ActiveTab, QuickUpdatePayload, 
@@ -894,35 +894,185 @@ export default function App() {
       return;
     }
 
-    const exportData = filteredItems.map((item, index) => ({
-      'SL': index + 1,
-      'Buyer Name': item.buyer_name || '',
-      'Booking Date': item.date || '',
-      'Booking Challan': item.booking_challan || '',
-      'Style': item.style || '',
-      'Order No': item.order_no || '',
-      'Store Ref.': item.store_ref || '',
-      'Job No': item.job_no || '',
-      'Colour': item.colour || '',
-      'Item Name': item.item_name || '',
-      'CM': item.cm || '',
-      'YDS': item.yds || '',
-      'Booking Qty (Pcs)': Number(item.booking_qty) || 0,
-      'Receive Qty (Pcs)': Number(item.receive_qty) || 0,
-      'Receive Date': item.receive_date || '',
-      'Receive Challan': item.receive_challan || '',
-      'Issue Qty (Pcs)': Number(item.issue_qty) || 0,
-      'Issue Date': item.issue_date || '',
-      'Issue Challan': item.issue_challan || '',
-      'Balance Qty (Pcs)': Number(item.balance_qty) || 0,
-      'Remarks': item.remarks || ''
-    }));
+    const headers = [
+      'SL',
+      'Buyer Name',
+      'Booking Date',
+      'Booking Challan',
+      'Style',
+      'Order No',
+      'Store Ref.',
+      'Job No',
+      'Colour',
+      'Item Name',
+      'CM',
+      'YDS',
+      'Booking Qty (Pcs)',
+      'Receive Qty (Pcs)',
+      'Receive Date',
+      'Receive Challan',
+      'Issue Qty (Pcs)',
+      'Issue Date',
+      'Issue Challan',
+      'Balance Qty (Pcs)',
+      'Remarks'
+    ];
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const createStyledWorksheet = (itemList: TwillTapeItem[]) => {
+      const dataRows = itemList.map((item, index) => [
+        index + 1,
+        item.buyer_name || '',
+        item.date || '',
+        item.booking_challan || '',
+        item.style || '',
+        item.order_no || '',
+        item.store_ref || '',
+        item.job_no || '',
+        item.colour || '',
+        item.item_name || '',
+        item.cm || '',
+        item.yds || '',
+        Number(item.booking_qty) || 0,
+        Number(item.receive_qty) || 0,
+        item.receive_date || '',
+        item.receive_challan || '',
+        Number(item.issue_qty) || 0,
+        item.issue_date || '',
+        item.issue_challan || '',
+        Number(item.balance_qty) || 0,
+        item.remarks || ''
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+
+      // Row Heights
+      ws['!rows'] = [
+        { hpt: 28 }, // Header
+        ...itemList.map(() => ({ hpt: 20 }))
+      ];
+
+      // Column Widths
+      const colWidths = headers.map((h, colIdx) => {
+        let maxLen = h.length;
+        dataRows.forEach(row => {
+          const val = row[colIdx] != null ? String(row[colIdx]) : '';
+          if (val.length > maxLen) maxLen = val.length;
+        });
+        return { wch: Math.min(Math.max(maxLen + 4, 10), 35) };
+      });
+      ws['!cols'] = colWidths;
+
+      const thinBorder = {
+        top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+        bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+        left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+        right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+      };
+
+      const headerStyle = {
+        fill: { fgColor: { rgb: '1E3A8A' } }, // Deep Navy
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+        border: {
+          top: { style: 'medium', color: { rgb: '1E3A8A' } },
+          bottom: { style: 'medium', color: { rgb: '1E3A8A' } },
+          left: { style: 'thin', color: { rgb: '3B82F6' } },
+          right: { style: 'thin', color: { rgb: '3B82F6' } }
+        }
+      };
+
+      // Header cells
+      headers.forEach((_, c) => {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
+        if (ws[cellRef]) {
+          ws[cellRef].s = headerStyle;
+        }
+      });
+
+      // Data cells
+      itemList.forEach((item, rowIdx) => {
+        const r = rowIdx + 1;
+        const bookingQty = Number(item.booking_qty) || 0;
+        const receiveQty = Number(item.receive_qty) || 0;
+        const isUnreceived = receiveQty < bookingQty || receiveQty === 0;
+
+        headers.forEach((colName, c) => {
+          const cellRef = XLSX.utils.encode_cell({ r, c });
+          if (!ws[cellRef]) return;
+
+          const isBookingQtyCol = colName === 'Booking Qty (Pcs)';
+          const isColourCol = colName === 'Colour';
+          const isNumericCol = ['Booking Qty (Pcs)', 'Receive Qty (Pcs)', 'Issue Qty (Pcs)', 'Balance Qty (Pcs)'].includes(colName);
+          const isCenterCol = ['SL', 'Booking Date', 'Receive Date', 'Issue Date', 'CM', 'YDS'].includes(colName);
+
+          let fgColor = rowIdx % 2 === 0 ? 'FFFFFF' : 'F9FAFB';
+          let fontColor = '1F2937';
+          let isBold = false;
+
+          // Apply Yellow Highlights for Unreceived Bookings ONLY on 'Booking Qty (Pcs)' and 'Colour'
+          if (isUnreceived) {
+            if (isBookingQtyCol) {
+              fgColor = 'FFFF00'; // Bright Yellow
+              fontColor = '991B1B'; // Dark Red
+              isBold = true;
+            } else if (isColourCol) {
+              fgColor = 'FFFF00'; // Bright Yellow
+              fontColor = '1F2937';
+              isBold = true;
+            }
+          }
+
+          ws[cellRef].s = {
+            fill: { fgColor: { rgb: fgColor } },
+            font: { name: 'Calibri', sz: 10, bold: isBold, color: { rgb: fontColor } },
+            border: thinBorder,
+            alignment: {
+              vertical: 'center',
+              horizontal: isNumericCol ? 'right' : (isCenterCol ? 'center' : 'left'),
+              wrapText: true
+            }
+          };
+        });
+      });
+
+      return ws;
+    };
+
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Twill Tape Inventory');
+
+    // 1. All Twill Tapes Master Sheet
+    const wsMaster = createStyledWorksheet(filteredItems);
+    XLSX.utils.book_append_sheet(workbook, wsMaster, "All Twill Tapes");
+
+    // 2. Separate Sheets for Each Buyer
+    const buyerMap: Record<string, TwillTapeItem[]> = {};
+    filteredItems.forEach(item => {
+      const bName = (item.buyer_name || 'General Buyer').trim();
+      if (!buyerMap[bName]) {
+        buyerMap[bName] = [];
+      }
+      buyerMap[bName].push(item);
+    });
+
+    Object.keys(buyerMap).forEach(bName => {
+      const buyerItems = buyerMap[bName];
+      const wsBuyer = createStyledWorksheet(buyerItems);
+
+      let safeName = bName.replace(/[:\\/?*\[\]]/g, '').trim().slice(0, 30);
+      if (!safeName) safeName = 'Buyer';
+
+      let finalSheetName = safeName;
+      let counter = 1;
+      while (workbook.SheetNames.includes(finalSheetName)) {
+        finalSheetName = `${safeName.slice(0, 25)}_${counter}`;
+        counter++;
+      }
+
+      XLSX.utils.book_append_sheet(workbook, wsBuyer, finalSheetName);
+    });
+
     XLSX.writeFile(workbook, `twill_tape_inventory_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    showToast(`Downloaded Excel sheet with ${filteredItems.length} record(s)!`, "success");
+    showToast(`Downloaded Excel sheet with buyer tabs & yellow highlighted unreceived items!`, "success");
   };
 
   const exportToCSV = () => {
