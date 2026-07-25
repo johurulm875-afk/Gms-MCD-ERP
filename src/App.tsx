@@ -221,6 +221,11 @@ export default function App() {
     showToast(`New Drawstring Booking ${itemWithId.store_ref} created!`, 'success');
   };
 
+  const handleDeleteDrawstringItem = (id: number) => {
+    setDrawstringItems(prev => prev.filter(i => i.id !== id));
+    showToast(`Drawstring item #${id} deleted`, 'info');
+  };
+
   // Planning State
   const [planningItems, setPlanningItems] = useState<PlanningItem[]>(() => {
     const saved = localStorage.getItem('mcd_planning_items');
@@ -1649,10 +1654,12 @@ export default function App() {
                 items={filteredItems}
                 isLoading={isLoading}
                 onEditItem={(item) => setEditingItem(item)}
+                onDeleteItem={handleDeleteBooking}
                 onQuickStoreRefAction={(storeRef) => triggerQuickStoreRefAction(storeRef)}
                 onViewHistory={(item) => setHistoryModalItem(item)}
                 onExportExcel={exportToExcel}
                 theme={theme}
+                currentUser={currentUser}
               />
             </div>
           )}
@@ -1705,6 +1712,7 @@ export default function App() {
                 onRefresh={fetchSewingInventory}
                 showToast={showToast}
                 theme={theme}
+                currentUser={currentUser}
                 openNewBookingSignal={sewingNewBookingSignal}
               />
             </div>
@@ -1716,7 +1724,9 @@ export default function App() {
               items={drawstringItems}
               onUpdateItem={handleUpdateDrawstringItem}
               onAddItem={handleAddDrawstringItem}
+              onDeleteItem={handleDeleteDrawstringItem}
               theme={theme}
+              currentUser={currentUser}
             />
           )}
 
@@ -1736,6 +1746,9 @@ export default function App() {
             <DrawstringReport
               items={drawstringItems}
               theme={theme}
+              currentUser={currentUser}
+              onUpdateItem={handleUpdateDrawstringItem}
+              onDeleteItem={handleDeleteDrawstringItem}
             />
           )}
 

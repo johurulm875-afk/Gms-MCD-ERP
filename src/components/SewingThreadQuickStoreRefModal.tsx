@@ -85,6 +85,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
     style_colour: '',
     item_name: '',
     count_shade: '',
+    sr_gt: '',
     meter_consm: '',
     supplier: '',
     booking_qty: '',
@@ -103,6 +104,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
       style_colour: '',
       item_name: '',
       count_shade: '',
+      sr_gt: '',
       meter_consm: '',
       supplier: '',
       booking_qty: '',
@@ -113,7 +115,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
     });
   };
 
-  const hasActiveColFilters = Object.values(colFilters).some(val => val.trim().length > 0);
+  const hasActiveColFilters = Object.values(colFilters).some(val => String(val || '').trim().length > 0);
 
   // Unique lists for quick filter chips & suggestions
   const uniqueStoreRefs = Array.from(new Set(allItems.map(i => i.store_ref || i.s_thread_ref || '').filter(Boolean))).sort();
@@ -154,6 +156,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
         const count = (item.thread_count || item.count || '').toLowerCase();
         const itemNm = (item.item_name || '').toLowerCase();
         const supp = (item.supplier || '').toLowerCase();
+        const srGt = (item.sr_gt || '').toLowerCase();
 
         return (
           ref.includes(term) ||
@@ -164,7 +167,8 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
           shade.includes(term) ||
           count.includes(term) ||
           itemNm.includes(term) ||
-          supp.includes(term)
+          supp.includes(term) ||
+          srGt.includes(term)
         );
       });
     }
@@ -204,12 +208,15 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
         (i.shade_no || i.pantone || '').toLowerCase().includes(q)
       );
     }
+    if (colFilters.sr_gt) {
+      const q = colFilters.sr_gt.toLowerCase();
+      filtered = filtered.filter(i => (i.sr_gt || '').toLowerCase().includes(q));
+    }
     if (colFilters.meter_consm) {
       const q = colFilters.meter_consm.toLowerCase();
       filtered = filtered.filter(i =>
         (i.meter || '').toLowerCase().includes(q) ||
-        (i.per_body_consm || '').toLowerCase().includes(q) ||
-        (i.sr_gt || '').toLowerCase().includes(q)
+        (i.per_body_consm || '').toLowerCase().includes(q)
       );
     }
     if (colFilters.supplier) {
@@ -760,7 +767,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       <span className="text-[10px] opacity-70">SHOW ALL</span>
                     </button>
                     {uniqueStoreRefs
-                      .filter(ref => !searchTerm || ref.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .filter(ref => !searchTerm || String(ref || '').toLowerCase().includes(searchTerm.toLowerCase()))
                       .map((ref) => {
                         const count = allItems.filter(i => (i.store_ref || i.s_thread_ref) === ref).length;
                         return (
@@ -856,8 +863,11 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                   <th className={`py-2 px-2.5 border min-w-[140px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Count & Shade/Pantone
                   </th>
-                  <th className={`py-2 px-2.5 border min-w-[130px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
-                    Meter / Consm / SR GT
+                  <th className={`py-2 px-2.5 border min-w-[140px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                    SR / GT Ref
+                  </th>
+                  <th className={`py-2 px-2.5 border min-w-[120px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                    Meter / Consm
                   </th>
                   <th className={`py-2 px-2.5 border min-w-[120px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Supplier
@@ -937,6 +947,17 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       placeholder="Filter Count/Shade"
                       className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
                         isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.sr_gt}
+                      onChange={e => setColFilters(prev => ({ ...prev, sr_gt: e.target.value }))}
+                      placeholder="🔍 Filter SR/GT (e.g. GMST...)"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-amber-400 font-bold ${
+                        isDark ? 'bg-amber-950/60 border-amber-800 text-amber-200 placeholder-amber-500' : 'bg-slate-900 border-amber-500 text-amber-300 placeholder-amber-400'
                       }`}
                     />
                   </th>
@@ -1112,7 +1133,20 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                         </div>
                       </td>
 
-                      {/* Meter / Consm / SR GT */}
+                      {/* SR / GT Ref Column */}
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                        {item.sr_gt ? (
+                          <span className={`inline-block font-mono text-[11px] font-extrabold px-1.5 py-0.5 rounded border ${
+                            isDark ? 'bg-amber-950/80 text-amber-300 border-amber-700' : 'bg-amber-50 text-amber-900 border-amber-300'
+                          }`}>
+                            {item.sr_gt}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-mono">N/A</span>
+                        )}
+                      </td>
+
+                      {/* Meter / Consm */}
                       <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         {item.meter && (
                           <div className="text-[11px] font-mono text-slate-700 dark:text-slate-300">
@@ -1122,11 +1156,6 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                         {item.per_body_consm && (
                           <div className="text-[10px] text-slate-500 dark:text-slate-400">
                             Consm: {item.per_body_consm}
-                          </div>
-                        )}
-                        {item.sr_gt && (
-                          <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
-                            {item.sr_gt}
                           </div>
                         )}
                       </td>

@@ -5,6 +5,7 @@ import { getItemRowStyle } from '../utils/statusHelper';
 import { 
   ArrowUpDown, 
   Edit, 
+  Trash2,
   Zap, 
   Layers, 
   Tag, 
@@ -25,6 +26,7 @@ interface InventoryTableProps {
   items: TwillTapeItem[];
   isLoading: boolean;
   onEditItem: (item: TwillTapeItem) => void;
+  onDeleteItem?: (id: number) => void;
   onQuickStoreRefAction: (storeRef: string) => void;
   onViewHistory?: (item: TwillTapeItem) => void;
   onExportExcel?: () => void;
@@ -39,6 +41,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
   items,
   isLoading,
   onEditItem,
+  onDeleteItem,
   onQuickStoreRefAction,
   onViewHistory,
   onExportExcel,
@@ -109,7 +112,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = Object.values(colFilters).some(v => v.trim().length > 0);
+  const hasActiveFilters = Object.values(colFilters).some(v => String(v || '').trim().length > 0);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -518,6 +521,19 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                             >
                               <Edit className="w-3 h-3" />
                             </button>
+                            {onDeleteItem && (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Are you sure you want to delete Twill Tape record #${item.id} (${item.style})?`)) {
+                                    onDeleteItem(item.id);
+                                  }
+                                }}
+                                className="p-1 rounded bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 hover:text-rose-900 transition-colors shadow-2xs"
+                                title="Delete Record"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
                             <button
                               onClick={() => onQuickStoreRefAction(item.store_ref)}
                               className="p-1 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 transition-colors shadow-2xs text-[10px] font-bold flex items-center gap-1"

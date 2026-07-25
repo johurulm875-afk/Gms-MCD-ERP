@@ -56,6 +56,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
   const [isNewBookingOpen, setIsNewBookingOpen] = useState<boolean>(false);
   const [isQuickWorkspaceOpen, setIsQuickWorkspaceOpen] = useState<boolean>(false);
   const [quickWorkspaceTargetRef, setQuickWorkspaceTargetRef] = useState<string>('');
+  const [editingItem, setEditingItem] = useState<SewingThreadItem | null>(null);
 
   useEffect(() => {
     if (openNewBookingSignal && openNewBookingSignal > 0) {
@@ -97,6 +98,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
           item.order_no?.toLowerCase().includes(q) ||
           (item.thread_count || item.count)?.toLowerCase().includes(q) ||
           (item.shade_no || item.pantone)?.toLowerCase().includes(q) ||
+          item.sr_gt?.toLowerCase().includes(q) ||
           item.job_no?.toLowerCase().includes(q);
         if (!match) return false;
       }
@@ -656,6 +658,15 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                             <>
                               <button
                                 type="button"
+                                onClick={() => setEditingItem(item)}
+                                className="p-1 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 hover:text-indigo-600 transition-all shadow-2xs"
+                                title="Edit Sewing Thread Booking"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
                                 onClick={() => handleOpenQuickWorkspace(item.store_ref || item.s_thread_ref || item.style || '')}
                                 className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs"
                                 title="Open Receive / Issue Workspace"
@@ -666,8 +677,12 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
 
                               <button
                                 type="button"
-                                onClick={() => onDeleteBooking(item.id)}
-                                className="p-1 text-rose-600 hover:text-rose-800 transition-all"
+                                onClick={() => {
+                                  if (confirm(`Are you sure you want to delete sewing thread record #${item.id} (${item.style})?`)) {
+                                    onDeleteBooking(item.id);
+                                  }
+                                }}
+                                className="p-1 text-rose-600 hover:text-rose-800 transition-all hover:bg-rose-50 rounded"
                                 title="Delete"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -708,6 +723,239 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
         existingBuyers={uniqueBuyers}
         theme={theme}
       />
+
+      {/* 3. EDIT SEWING THREAD BOOKING MODAL */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`w-full max-w-2xl rounded-2xl border shadow-2xl overflow-hidden my-8 ${
+            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="p-4 border-b flex items-center justify-between bg-emerald-600 text-white">
+              <div className="flex items-center gap-2">
+                <Edit className="w-5 h-5" />
+                <h3 className="font-extrabold text-sm">Edit Sewing Thread Booking Record (#{editingItem.id})</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await onUpdateBooking(editingItem);
+                setEditingItem(null);
+                showToast("Sewing Thread record updated successfully!", "success");
+              }}
+              className="p-5 space-y-4 max-h-[80vh] overflow-y-auto"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Buyer Name</label>
+                  <input
+                    type="text"
+                    value={editingItem.buyer_name || editingItem.buyer || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, buyer_name: e.target.value, buyer: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Job No</label>
+                  <input
+                    type="text"
+                    value={editingItem.job_no || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, job_no: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Style Name</label>
+                  <input
+                    type="text"
+                    value={editingItem.style || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, style: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Order No / PO</label>
+                  <input
+                    type="text"
+                    value={editingItem.order_no || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, order_no: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">SR / GT Ref</label>
+                  <input
+                    type="text"
+                    value={editingItem.sr_gt || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, sr_gt: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Store Ref Code</label>
+                  <input
+                    type="text"
+                    value={editingItem.store_ref || editingItem.s_thread_ref || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, store_ref: e.target.value, s_thread_ref: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-mono font-bold text-indigo-600 ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Thread Count</label>
+                  <input
+                    type="text"
+                    value={editingItem.thread_count || editingItem.count || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, thread_count: e.target.value, count: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Colour</label>
+                  <input
+                    type="text"
+                    value={editingItem.colour || editingItem.color || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, colour: e.target.value, color: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Shade No / Pantone</label>
+                  <input
+                    type="text"
+                    value={editingItem.shade_no || editingItem.pantone || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, shade_no: e.target.value, pantone: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Booking Qty (Cones)</label>
+                  <input
+                    type="number"
+                    value={editingItem.booking_qty}
+                    onChange={(e) => {
+                      const bQty = Number(e.target.value) || 0;
+                      const rQty = editingItem.receive_qty || 0;
+                      const iQty = editingItem.issue_qty || 0;
+                      const bal = rQty > 0 ? Math.max(0, rQty - iQty) : bQty;
+                      setEditingItem({ ...editingItem, booking_qty: bQty, balance_qty: bal });
+                    }}
+                    className={`w-full p-2 border rounded-xl font-bold font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Receive Qty</label>
+                  <input
+                    type="number"
+                    value={editingItem.receive_qty || 0}
+                    onChange={(e) => {
+                      const rQty = Number(e.target.value) || 0;
+                      const iQty = editingItem.issue_qty || 0;
+                      const bal = rQty > 0 ? Math.max(0, rQty - iQty) : editingItem.booking_qty;
+                      setEditingItem({ ...editingItem, receive_qty: rQty, balance_qty: bal });
+                    }}
+                    className={`w-full p-2 border rounded-xl font-bold font-mono text-emerald-600 ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Receive Date</label>
+                  <input
+                    type="date"
+                    value={editingItem.receive_date || editingItem.rcvd_date || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, receive_date: e.target.value, rcvd_date: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Receive Challan</label>
+                  <input
+                    type="text"
+                    value={editingItem.receive_challan || editingItem.rcvd_challan || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, receive_challan: e.target.value, rcvd_challan: e.target.value })}
+                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Issue Qty</label>
+                  <input
+                    type="number"
+                    value={editingItem.issue_qty || 0}
+                    onChange={(e) => {
+                      const iQty = Number(e.target.value) || 0;
+                      const rQty = editingItem.receive_qty || 0;
+                      const bal = rQty > 0 ? Math.max(0, rQty - iQty) : editingItem.booking_qty;
+                      setEditingItem({ ...editingItem, issue_qty: iQty, balance_qty: bal });
+                    }}
+                    className={`w-full p-2 border rounded-xl font-bold font-mono text-blue-600 ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Supplier</label>
+                  <input
+                    type="text"
+                    value={editingItem.supplier || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, supplier: e.target.value })}
+                    className={`w-full p-2 border rounded-xl ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-500 mb-1 text-xs">Remarks / Notes</label>
+                <textarea
+                  rows={2}
+                  value={editingItem.remarks || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, remarks: e.target.value })}
+                  className={`w-full p-2 border rounded-xl text-xs ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
+                  placeholder="Additional notes..."
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="px-4 py-2 border rounded-xl font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

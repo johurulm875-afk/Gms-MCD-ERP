@@ -528,9 +528,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               ) : (
                 filteredUsers.map((user) => {
                   const showPass = !!visiblePasswords[user.id];
-                  const isAdminUser = user.role === 'ADMINISTRATOR' || user.username.toLowerCase() === 'admin@gms.com';
+                  const isAdminRole = user.role === 'ADMINISTRATOR' || user.role === 'ADMIN' || user.username.toLowerCase() === 'admin@gms.com';
+                  const isMasterAdmin = user.username.toLowerCase() === 'admin@gms.com';
                   const userRole = (user.role || '').toUpperCase();
-                  const isPendingUser = user.status === 'PENDING' || (user.is_approved === false && user.status !== 'APPROVED' && !isAdminUser);
+                  const isPendingUser = user.status === 'PENDING' || (user.is_approved === false && user.status !== 'APPROVED' && !isAdminRole);
 
                   return (
                     <tr key={user.id} className={`hover:bg-slate-500/5 transition-colors font-medium ${
@@ -541,7 +542,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center shrink-0 border ${
-                            isAdminUser 
+                            isAdminRole 
                               ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm' 
                               : isPendingUser
                               ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold'
@@ -697,7 +698,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
                               </button>
 
-                              {!isAdminUser && (
+                              {!isMasterAdmin && (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteUser(user.id, user.username)}

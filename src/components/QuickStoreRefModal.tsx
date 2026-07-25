@@ -140,7 +140,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
     });
   };
 
-  const hasActiveColFilters = Object.values(colFilters).some(val => val.trim().length > 0);
+  const hasActiveColFilters = Object.values(colFilters).some(val => String(val || '').trim().length > 0);
 
   useEffect(() => {
     let filtered = [...allItems];
@@ -1028,7 +1028,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                       <span className="text-[10px] opacity-70">SHOW ALL</span>
                     </button>
                     {uniqueStoreRefs
-                      .filter(ref => !searchTerm || ref.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .filter(ref => !searchTerm || String(ref || '').toLowerCase().includes(searchTerm.toLowerCase()))
                       .map((ref) => {
                         const count = allItems.filter(i => i.store_ref === ref).length;
                         return (
