@@ -1333,7 +1333,7 @@ export default function App() {
         <header className={`sticky top-0 z-20 backdrop-blur-md border-b transition-colors ${
           isLight ? 'bg-white/90 border-slate-200 text-slate-900' : 'bg-slate-900/90 border-slate-800 text-white'
         }`}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          <div className="w-full px-3 sm:px-5 lg:px-6 h-16 flex items-center justify-between gap-4">
             
             {/* Left: Mobile Menu Trigger + Desktop Sidebar Toggle + Module Title */}
             <div className="flex items-center gap-2.5">
@@ -1460,7 +1460,7 @@ export default function App() {
         </header>
 
         {/* BODY TAB ROUTER CONTENT */}
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto flex-1">
+        <div className="p-3 sm:p-5 lg:p-6 w-full max-w-none flex-1 min-w-0">
           
           {/* TAB 1: MAIN DASHBOARD */}
           {activeTab === 'dashboard' && (
@@ -1777,7 +1777,7 @@ export default function App() {
         <footer className={`border-t py-4 px-6 text-center text-xs mt-auto transition-colors ${
           isLight ? 'bg-white border-slate-200 text-slate-600' : 'bg-slate-900 border-slate-800 text-slate-400'
         }`}>
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="w-full px-3 sm:px-5 lg:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <GmsLogo size={18} className="w-4 h-4" />
               <span className="font-bold">GMS MCD ERP SYSTEM • Supabase Integrated</span>
