@@ -142,13 +142,20 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
 
         const balQty = rQty > 0 ? Math.max(0, rQty - iQty) : 0;
 
+        const finalRecvDate = rQty > 0 ? (formData.receive_date || '') : '';
+        const finalIssueDate = iQty > 0 ? (formData.issue_date || '') : '';
+
         return {
           ...formData,
           buyer_name: finalBuyer || 'General Buyer',
           colour: row.colour.trim().toUpperCase(),
           booking_qty: bQty,
           receive_qty: rQty,
+          receive_date: finalRecvDate,
+          receive_challan: rQty > 0 ? (formData.receive_challan || '') : '',
           issue_qty: iQty,
+          issue_date: finalIssueDate,
+          issue_challan: iQty > 0 ? (formData.issue_challan || '') : '',
           balance_qty: balQty
         };
       });

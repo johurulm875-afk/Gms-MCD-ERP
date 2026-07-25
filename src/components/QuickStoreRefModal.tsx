@@ -506,10 +506,31 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
       setIsSaving(true);
       await onSaveQuickUpdates(updatesToSave);
       setSaveSuccess(true);
+
+      // Update row states locally so saved quantities become previous totals and clean input boxes
+      setRowStates(prev => {
+        const nextState = { ...prev };
+        Object.keys(nextState).forEach(k => {
+          const id = Number(k);
+          const current = nextState[id];
+          if (current) {
+            nextState[id] = {
+              ...current,
+              prev_receive_qty: current.receive_qty,
+              today_receive_qty: '',
+              receive_sub_batches: [],
+              prev_issue_qty: current.issue_qty,
+              today_issue_qty: '',
+              issue_sub_batches: []
+            };
+          }
+        });
+        return nextState;
+      });
+
       setTimeout(() => {
         setSaveSuccess(false);
-        onClose();
-      }, 800);
+      }, 3000);
     } catch (err) {
       console.error("Failed to save quick updates:", err);
     } finally {
