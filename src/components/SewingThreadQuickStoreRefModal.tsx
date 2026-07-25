@@ -74,7 +74,48 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Unique lists for quick filter chips
+  // Auto save state
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(true);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  // Excel-style column filters for every column
+  const [colFilters, setColFilters] = useState({
+    buyer_ref_job: '',
+    booking_info: '',
+    style_colour: '',
+    item_name: '',
+    count_shade: '',
+    meter_consm: '',
+    supplier: '',
+    booking_qty: '',
+    receive_qty: '',
+    issue_qty: '',
+    balance_qty: '',
+    remarks: ''
+  });
+
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
+  const clearAllColFilters = () => {
+    setColFilters({
+      buyer_ref_job: '',
+      booking_info: '',
+      style_colour: '',
+      item_name: '',
+      count_shade: '',
+      meter_consm: '',
+      supplier: '',
+      booking_qty: '',
+      receive_qty: '',
+      issue_qty: '',
+      balance_qty: '',
+      remarks: ''
+    });
+  };
+
+  const hasActiveColFilters = Object.values(colFilters).some(val => val.trim().length > 0);
+
+  // Unique lists for quick filter chips & suggestions
   const uniqueStoreRefs = Array.from(new Set(allItems.map(i => i.store_ref || i.s_thread_ref || '').filter(Boolean))).sort();
   const allBuyers = Array.from(new Set([...existingBuyers, ...allItems.map(i => i.buyer_name || i.buyer || '').filter(Boolean)])).sort();
   const allStyles = Array.from(new Set(allItems.map(i => i.style || '').filter(Boolean))).sort();
@@ -89,7 +130,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
     setWorkspaceTheme(initialTheme);
   }, [initialTheme]);
 
-  // Filter items based on buyer selection, style, & search term
+  // Filter items based on buyer selection, style, search term & column filters
   useEffect(() => {
     let filtered = [...allItems];
 
@@ -111,6 +152,8 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
         const job = (item.job_no || '').toLowerCase();
         const shade = (item.shade_no || item.pantone || '').toLowerCase();
         const count = (item.thread_count || item.count || '').toLowerCase();
+        const itemNm = (item.item_name || '').toLowerCase();
+        const supp = (item.supplier || '').toLowerCase();
 
         return (
           ref.includes(term) ||
@@ -119,38 +162,217 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
           colour.includes(term) ||
           job.includes(term) ||
           shade.includes(term) ||
-          count.includes(term)
+          count.includes(term) ||
+          itemNm.includes(term) ||
+          supp.includes(term)
         );
       });
     }
 
+    // Apply Column Filters instantly
+    if (colFilters.buyer_ref_job) {
+      const q = colFilters.buyer_ref_job.toLowerCase();
+      filtered = filtered.filter(i =>
+        (i.buyer_name || i.buyer || '').toLowerCase().includes(q) ||
+        (i.store_ref || i.s_thread_ref || '').toLowerCase().includes(q) ||
+        (i.job_no || '').toLowerCase().includes(q)
+      );
+    }
+    if (colFilters.booking_info) {
+      const q = colFilters.booking_info.toLowerCase();
+      filtered = filtered.filter(i =>
+        (i.date || '').toLowerCase().includes(q) ||
+        (i.booking_challan || '').toLowerCase().includes(q) ||
+        (i.order_no || '').toLowerCase().includes(q)
+      );
+    }
+    if (colFilters.style_colour) {
+      const q = colFilters.style_colour.toLowerCase();
+      filtered = filtered.filter(i =>
+        (i.style || '').toLowerCase().includes(q) ||
+        (i.colour || i.color || '').toLowerCase().includes(q)
+      );
+    }
+    if (colFilters.item_name) {
+      const q = colFilters.item_name.toLowerCase();
+      filtered = filtered.filter(i => (i.item_name || '').toLowerCase().includes(q));
+    }
+    if (colFilters.count_shade) {
+      const q = colFilters.count_shade.toLowerCase();
+      filtered = filtered.filter(i =>
+        (i.thread_count || i.count || '').toLowerCase().includes(q) ||
+        (i.shade_no || i.pantone || '').toLowerCase().includes(q)
+      );
+    }
+    if (colFilters.meter_consm) {
+      const q = colFilters.meter_consm.toLowerCase();
+      filtered = filtered.filter(i =>
+        (i.meter || '').toLowerCase().includes(q) ||
+        (i.per_body_consm || '').toLowerCase().includes(q) ||
+        (i.sr_gt || '').toLowerCase().includes(q)
+      );
+    }
+    if (colFilters.supplier) {
+      const q = colFilters.supplier.toLowerCase();
+      filtered = filtered.filter(i => (i.supplier || '').toLowerCase().includes(q));
+    }
+    if (colFilters.booking_qty) {
+      filtered = filtered.filter(i => String(i.booking_qty || 0).includes(colFilters.booking_qty));
+    }
+    if (colFilters.receive_qty) {
+      filtered = filtered.filter(i => String(i.receive_qty || 0).includes(colFilters.receive_qty));
+    }
+    if (colFilters.issue_qty) {
+      filtered = filtered.filter(i => String(i.issue_qty || 0).includes(colFilters.issue_qty));
+    }
+    if (colFilters.balance_qty) {
+      filtered = filtered.filter(i => String(i.balance_qty || 0).includes(colFilters.balance_qty));
+    }
+    if (colFilters.remarks) {
+      const q = colFilters.remarks.toLowerCase();
+      filtered = filtered.filter(i => (i.remarks || '').toLowerCase().includes(q));
+    }
+
     setMatchingItems(filtered);
 
-    // Initialize row states with empty input boxes
-    const initialRowStates: Record<number, SewingRowState> = {};
-    filtered.forEach(item => {
-      const prevRecv = item.receive_qty || 0;
-      const prevIss = item.issue_qty || 0;
-      initialRowStates[item.id] = {
-        id: item.id,
-        prev_receive_qty: prevRecv,
-        today_receive_qty: '',
-        receive_qty: prevRecv,
-        receive_date: '',
-        receive_challan: '',
+    // Merge/Initialize row states preserving any active unsaved user inputs
+    setRowStates(prev => {
+      const nextStates: Record<number, SewingRowState> = { ...prev };
+      filtered.forEach(item => {
+        const prevRecv = item.receive_qty || 0;
+        const prevIss = item.issue_qty || 0;
 
-        prev_issue_qty: prevIss,
-        today_issue_qty: '',
-        issue_qty: prevIss,
-        issue_date: '',
-        issue_challan: '',
+        if (nextStates[item.id]) {
+          const current = nextStates[item.id];
+          const addedR = typeof current.today_receive_qty === 'number' ? current.today_receive_qty : 0;
+          const addedI = typeof current.today_issue_qty === 'number' ? current.today_issue_qty : 0;
+          const totalR = prevRecv + addedR;
+          const totalI = prevIss + addedI;
+          nextStates[item.id] = {
+            ...current,
+            prev_receive_qty: prevRecv,
+            prev_issue_qty: prevIss,
+            receive_qty: totalR,
+            issue_qty: totalI,
+            balance_qty: totalR > 0 ? Math.max(0, totalR - totalI) : 0
+          };
+        } else {
+          nextStates[item.id] = {
+            id: item.id,
+            prev_receive_qty: prevRecv,
+            today_receive_qty: '',
+            receive_qty: prevRecv,
+            receive_date: '',
+            receive_challan: '',
 
-        balance_qty: item.balance_qty || 0,
-        remarks: item.remarks || ''
-      };
+            prev_issue_qty: prevIss,
+            today_issue_qty: '',
+            issue_qty: prevIss,
+            issue_date: '',
+            issue_challan: '',
+
+            balance_qty: item.balance_qty || 0,
+            remarks: item.remarks || ''
+          };
+        }
+      });
+      return nextStates;
     });
-    setRowStates(initialRowStates);
-  }, [searchTerm, selectedBuyer, selectedStyle, allItems]);
+  }, [searchTerm, selectedBuyer, selectedStyle, allItems, colFilters]);
+
+  // Debounced Auto-Save trigger
+  useEffect(() => {
+    if (!autoSaveEnabled || isSaving) return;
+
+    const rowsWithChanges = (Object.values(rowStates) as SewingRowState[]).filter(r => {
+      const hasRecv = typeof r.today_receive_qty === 'number' && r.today_receive_qty > 0;
+      const hasIss = typeof r.today_issue_qty === 'number' && r.today_issue_qty > 0;
+      return hasRecv || hasIss;
+    });
+
+    if (rowsWithChanges.length === 0) return;
+
+    const hasInvalid = rowsWithChanges.some(r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0));
+    if (hasInvalid) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setAutoSaveStatus('saving');
+        setIsSaving(true);
+
+        const effectiveDate = globalWorkingDate.trim() || getTodayFormatted();
+        const updatesToSave: QuickUpdatePayload[] = rowsWithChanges.map(r => {
+          const addedRecvTotal = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+          const addedIssTotal = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+
+          const newRecvLog: TransactionLog | undefined = addedRecvTotal > 0 ? {
+            id: Date.now().toString() + Math.random().toString(),
+            type: 'RECEIVE',
+            date: r.receive_date || effectiveDate,
+            challan: r.receive_challan || 'N/A',
+            qty: addedRecvTotal,
+            remarks: r.remarks
+          } : undefined;
+
+          const newIssLog: TransactionLog | undefined = addedIssTotal > 0 ? {
+            id: Date.now().toString() + Math.random().toString(),
+            type: 'ISSUE',
+            date: r.issue_date || effectiveDate,
+            challan: r.issue_challan || 'N/A',
+            qty: addedIssTotal,
+            remarks: r.remarks
+          } : undefined;
+
+          return {
+            id: r.id,
+            receive_qty: Number(r.receive_qty) || 0,
+            receive_date: r.receive_date || effectiveDate,
+            receive_challan: r.receive_challan || '',
+            issue_qty: Number(r.issue_qty) || 0,
+            issue_date: r.issue_date || effectiveDate,
+            issue_challan: r.issue_challan || '',
+            balance_qty: Number(r.balance_qty) || 0,
+            remarks: r.remarks || '',
+            new_receive_log: newRecvLog,
+            new_issue_log: newIssLog
+          };
+        });
+
+        await onSaveQuickUpdates(updatesToSave);
+
+        setRowStates(prev => {
+          const nextState = { ...prev };
+          rowsWithChanges.forEach(r => {
+            const current = nextState[r.id];
+            if (current) {
+              nextState[r.id] = {
+                ...current,
+                prev_receive_qty: current.receive_qty,
+                today_receive_qty: '',
+                prev_issue_qty: current.issue_qty,
+                today_issue_qty: ''
+              };
+            }
+          });
+          return nextState;
+        });
+
+        setAutoSaveStatus('saved');
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setAutoSaveStatus('idle');
+          setSaveSuccess(false);
+        }, 2500);
+      } catch (err) {
+        console.error("Sewing auto save failed:", err);
+        setAutoSaveStatus('idle');
+      } finally {
+        setIsSaving(false);
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [rowStates, autoSaveEnabled, isSaving, globalWorkingDate, onSaveQuickUpdates]);
 
   // Recalculate row receive/issue total and balance
   const recalculateRow = (state: SewingRowState): SewingRowState => {
@@ -204,11 +426,10 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
     });
   };
 
-  // Submit quick updates
+  // Submit quick updates manually
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Check if any row has issue_qty > receive_qty
     const invalidRow = (Object.values(rowStates) as SewingRowState[]).find(
       r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0)
     );
@@ -285,12 +506,12 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
   const isDark = workspaceTheme === 'dark';
 
   return (
-    <div className={`fixed inset-0 z-50 flex flex-col overflow-hidden animate-in fade-in duration-200 transition-colors ${
+    <div className={`fixed inset-0 z-50 flex flex-col overflow-hidden w-screen h-screen animate-in fade-in duration-200 transition-colors ${
       isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
     }`}>
       
       {/* 1. TOP HEADER BAR */}
-      <div className={`px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 border-b shadow-md ${
+      <div className={`px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0 border-b shadow-md ${
         isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-900 text-white border-slate-800'
       }`}>
         
@@ -302,13 +523,13 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-extrabold tracking-tight text-white">Sewing Thread Receive & Issue Workspace</h1>
+                <h1 className="text-base sm:text-lg font-extrabold tracking-tight text-white">Sewing Thread Receive & Issue Workspace</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Quick Entry
+                  Full Page
                 </span>
               </div>
-              <p className="text-[11px] text-slate-300">
-                Update thread cone receive & issue entries easily. Working date applies to all rows automatically.
+              <p className="text-[11px] text-slate-300 hidden sm:block">
+                All Supabase columns with Excel-style column filters & instant search.
               </p>
             </div>
           </div>
@@ -328,8 +549,39 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
           </div>
         </div>
 
-        {/* Right Actions */}
+        {/* Right Actions & Theme Switcher */}
         <div className="flex items-center gap-3">
+          
+          {/* Auto-Save Toggle & Indicator */}
+          <button
+            type="button"
+            onClick={() => setAutoSaveEnabled(prev => !prev)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all ${
+              autoSaveEnabled
+                ? 'bg-emerald-950 text-emerald-300 border-emerald-600/50 shadow-2xs'
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}
+            title="Toggle Automatic Background Saving"
+          >
+            <span className={`w-2 h-2 rounded-full ${
+              autoSaveStatus === 'saving'
+                ? 'bg-amber-400 animate-ping'
+                : autoSaveStatus === 'saved'
+                ? 'bg-emerald-400'
+                : autoSaveEnabled
+                ? 'bg-emerald-500'
+                : 'bg-slate-500'
+            }`} />
+            <span>
+              {autoSaveStatus === 'saving'
+                ? 'Auto Saving...'
+                : autoSaveStatus === 'saved'
+                ? 'Auto Saved ✓'
+                : `Auto Save: ${autoSaveEnabled ? 'ON' : 'OFF'}`}
+            </span>
+          </button>
+
+          {/* Workspace Theme Toggle */}
           <button
             type="button"
             onClick={() => setWorkspaceTheme(prev => prev === 'light' ? 'dark' : 'light')}
@@ -338,12 +590,12 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
             {isDark ? (
               <>
                 <Sun className="w-4 h-4 text-amber-400" />
-                <span>White Skin</span>
+                <span className="hidden sm:inline">White Skin</span>
               </>
             ) : (
               <>
                 <Moon className="w-4 h-4 text-indigo-300" />
-                <span>Dark Skin</span>
+                <span className="hidden sm:inline">Dark Skin</span>
               </>
             )}
           </button>
@@ -352,24 +604,24 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
             type="button"
             onClick={handleSubmit}
             disabled={isSaving || matchingItems.length === 0}
-            className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-lg flex items-center gap-2 transition-all ${
+            className={`px-4 sm:px-5 py-1.5 text-xs font-bold text-white rounded-xl shadow-lg flex items-center gap-2 transition-all ${
               saveSuccess ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600 hover:bg-emerald-500 active:scale-98'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isSaving ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                Saving...
+                <span>Saving...</span>
               </>
             ) : saveSuccess ? (
               <>
                 <Check className="w-4 h-4" />
-                Saved!
+                <span>Saved!</span>
               </>
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                Save {matchingItems.length} Thread Rows
+                <span>Save {matchingItems.length} Rows</span>
               </>
             )}
           </button>
@@ -377,6 +629,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
           <button
             onClick={onClose}
             className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Close Workspace"
           >
             <X className="w-5 h-5" />
           </button>
@@ -385,7 +638,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
       </div>
 
       {/* 2. FILTERS CONTROL BAR */}
-      <div className={`p-3.5 border-b shrink-0 space-y-2.5 ${
+      <div className={`p-3 border-b shrink-0 space-y-2.5 ${
         isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-2xs'
       }`}>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
@@ -395,7 +648,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
               isDark ? 'text-slate-400' : 'text-slate-600'
             }`}>
               <Filter className="w-3 h-3 text-emerald-500" />
-              Buyer
+              Buyer Dropdown
             </label>
             <select
               value={selectedBuyer}
@@ -416,7 +669,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
               isDark ? 'text-slate-400' : 'text-slate-600'
             }`}>
               <Tag className="w-3 h-3 text-amber-500" />
-              Style
+              Style Dropdown
             </label>
             <select
               value={selectedStyle}
@@ -432,20 +685,36 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
             </select>
           </div>
 
-          <div className="md:col-span-6">
-            <label className={`block text-[10px] font-extrabold uppercase tracking-wider mb-1 flex items-center gap-1 ${
-              isDark ? 'text-slate-400' : 'text-slate-600'
-            }`}>
-              <Search className="w-3 h-3 text-emerald-500" />
-              Search Store Ref / Style / Shade No / Count / Colour
-            </label>
+          <div className="md:col-span-6 relative">
+            <div className="flex items-center justify-between mb-1">
+              <label className={`block text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
+                isDark ? 'text-slate-400' : 'text-slate-600'
+              }`}>
+                <Search className="w-3 h-3 text-emerald-500" />
+                Global Search (Ref / Job / Style / Colour / Count / Shade / Supplier)
+              </label>
+
+              {hasActiveColFilters && (
+                <button
+                  type="button"
+                  onClick={clearAllColFilters}
+                  className="px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] rounded flex items-center gap-1 shadow-2xs transition-all active:scale-95"
+                  title="Clear all column filters"
+                >
+                  <X className="w-3 h-3" />
+                  Clear Column Filters
+                </button>
+              )}
+            </div>
+
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search Store Ref, Shade No, Count, Colour..."
+                onFocus={() => setShowSearchDropdown(true)}
+                placeholder="Click or type to search Store Ref, Job No, Colour..."
                 className={`w-full pl-8 pr-16 py-1.5 rounded-lg font-mono text-xs font-semibold border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
                   isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'
                 }`}
@@ -459,6 +728,58 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                 >
                   Clear
                 </button>
+              )}
+
+              {/* Excel-Style Clickable Filter Suggestions Box Dropdown */}
+              {showSearchDropdown && uniqueStoreRefs.length > 0 && (
+                <div
+                  className={`absolute left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded-xl border shadow-xl z-40 ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                  }`}
+                >
+                  <div className="p-2 border-b border-slate-700/50 flex items-center justify-between text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                    <span>Excel Store Ref Filter Suggestions ({uniqueStoreRefs.length} Refs)</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSearchDropdown(false)}
+                      className="p-0.5 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="p-1 space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm('');
+                        setShowSearchDropdown(false);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 text-xs font-bold rounded hover:bg-emerald-600 hover:text-white transition-colors flex items-center justify-between"
+                    >
+                      <span>All Store Refs ({allItems.length} items)</span>
+                      <span className="text-[10px] opacity-70">SHOW ALL</span>
+                    </button>
+                    {uniqueStoreRefs
+                      .filter(ref => !searchTerm || ref.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .map((ref) => {
+                        const count = allItems.filter(i => (i.store_ref || i.s_thread_ref) === ref).length;
+                        return (
+                          <button
+                            key={ref}
+                            type="button"
+                            onClick={() => {
+                              setSearchTerm(ref);
+                              setShowSearchDropdown(false);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 font-mono text-xs font-bold rounded hover:bg-emerald-600 hover:text-white transition-colors flex items-center justify-between"
+                          >
+                            <span>{ref}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/20 text-emerald-300 font-sans">{count} items</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -479,7 +800,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
           >
             All
           </button>
-          {uniqueStoreRefs.slice(0, 10).map((ref) => (
+          {uniqueStoreRefs.slice(0, 12).map((ref) => (
             <button
               key={ref}
               type="button"
@@ -496,8 +817,8 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
         </div>
       </div>
 
-      {/* 3. MAIN TABLE WORKSPACE */}
-      <div className={`flex-1 overflow-auto p-3 ${isDark ? 'bg-slate-950' : 'bg-slate-100'}`}>
+      {/* 3. MAIN TABLE WORKSPACE (FULL PAGE + FREEZE HEADERS) */}
+      <div className={`flex-1 overflow-auto p-2 sm:p-3 ${isDark ? 'bg-slate-950' : 'bg-slate-100'}`}>
         {matchingItems.length === 0 ? (
           <div className={`h-full flex flex-col items-center justify-center py-16 text-center border-2 border-dashed rounded-2xl ${
             isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-300 bg-white'
@@ -505,47 +826,196 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
             <AlertCircle className="w-12 h-12 text-slate-400 mb-2" />
             <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No matching thread items found</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-md">
-              Select a different Buyer/Style or clear your search term.
+              Select a different Buyer/Style or clear your column filters.
             </p>
           </div>
         ) : (
-          <div className="min-w-[1100px]">
+          <div className="min-w-[1500px]">
             <table className={`w-full text-left border-collapse text-xs ${
               isDark ? 'border-slate-800' : 'border-slate-300'
             }`}>
               <thead>
-                <tr className={`uppercase tracking-wider font-extrabold text-[10px] select-none sticky top-0 z-10 ${
+                {/* 1. COLUMN TITLE HEADER ROW (FROZEN STICKY TOP) */}
+                <tr className={`uppercase tracking-wider font-extrabold text-[10px] select-none sticky top-0 z-30 shadow-xs ${
                   isDark
                     ? 'bg-slate-900 text-slate-300 border-b-2 border-slate-700'
                     : 'bg-slate-800 text-white border-b-2 border-slate-900'
                 }`}>
-                  <th className={`py-2 px-3 border min-w-[180px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                  <th className={`py-2 px-2.5 border min-w-[180px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Buyer / Store Ref / Job
                   </th>
-                  <th className={`py-2 px-3 border min-w-[160px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                  <th className={`py-2 px-2.5 border min-w-[150px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                    Booking Date / Challan
+                  </th>
+                  <th className={`py-2 px-2.5 border min-w-[150px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Style & Colour
                   </th>
-                  <th className={`py-2 px-3 border min-w-[120px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
-                    Thread Count & Shade
+                  <th className={`py-2 px-2.5 border min-w-[140px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                    Item Name
                   </th>
-                  <th className={`py-2 px-3 border min-w-[100px] text-right ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                  <th className={`py-2 px-2.5 border min-w-[140px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                    Count & Shade/Pantone
+                  </th>
+                  <th className={`py-2 px-2.5 border min-w-[130px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                    Meter / Consm / SR GT
+                  </th>
+                  <th className={`py-2 px-2.5 border min-w-[120px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                    Supplier
+                  </th>
+                  <th className={`py-2 px-2.5 border min-w-[100px] text-right ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Booking Qty
                   </th>
-                  <th className={`py-2 px-3 border min-w-[260px] ${
+                  <th className={`py-2 px-2.5 border min-w-[260px] ${
                     isDark ? 'bg-emerald-950/80 text-emerald-200 border-slate-700' : 'bg-emerald-800 text-white border-slate-400'
                   }`}>
                     1. RECEIVE ENTRY (+ Challan)
                   </th>
-                  <th className={`py-2 px-3 border min-w-[260px] ${
+                  <th className={`py-2 px-2.5 border min-w-[260px] ${
                     isDark ? 'bg-blue-950/80 text-blue-200 border-slate-700' : 'bg-blue-800 text-white border-slate-400'
                   }`}>
                     2. ISSUE ENTRY (+ Challan)
                   </th>
-                  <th className={`py-2 px-3 border min-w-[100px] text-right ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                  <th className={`py-2 px-2.5 border min-w-[100px] text-right ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Balance Qty
                   </th>
-                  <th className={`py-2 px-3 border min-w-[130px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
+                  <th className={`py-2 px-2.5 border min-w-[130px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Remarks
+                  </th>
+                </tr>
+
+                {/* 2. EXCEL-STYLE COLUMN FILTER INPUT ROW (STICKY FROZEN BELOW TITLE HEADER) */}
+                <tr className={`sticky top-[31px] z-20 border-b shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-700 border-slate-600'}`}>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.buyer_ref_job}
+                      onChange={e => setColFilters(prev => ({ ...prev, buyer_ref_job: e.target.value }))}
+                      placeholder="🔍 Filter Buyer/Ref/Job..."
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.booking_info}
+                      onChange={e => setColFilters(prev => ({ ...prev, booking_info: e.target.value }))}
+                      placeholder="🔍 Filter Date/Challan..."
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.style_colour}
+                      onChange={e => setColFilters(prev => ({ ...prev, style_colour: e.target.value }))}
+                      placeholder="🔍 Filter Style/Colour..."
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.item_name}
+                      onChange={e => setColFilters(prev => ({ ...prev, item_name: e.target.value }))}
+                      placeholder="Filter Item Name"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.count_shade}
+                      onChange={e => setColFilters(prev => ({ ...prev, count_shade: e.target.value }))}
+                      placeholder="Filter Count/Shade"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.meter_consm}
+                      onChange={e => setColFilters(prev => ({ ...prev, meter_consm: e.target.value }))}
+                      placeholder="Filter Meter/Consm"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.supplier}
+                      onChange={e => setColFilters(prev => ({ ...prev, supplier: e.target.value }))}
+                      placeholder="Filter Supplier"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.booking_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, booking_qty: e.target.value }))}
+                      placeholder="Filter Booking"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 text-right ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.receive_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, receive_qty: e.target.value }))}
+                      placeholder="Filter Receive Qty"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-emerald-950 border-emerald-800 text-emerald-100 placeholder-emerald-400' : 'bg-emerald-950 border-emerald-700 text-emerald-100 placeholder-emerald-300'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.issue_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, issue_qty: e.target.value }))}
+                      placeholder="Filter Issue Qty"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                        isDark ? 'bg-blue-950 border-blue-800 text-blue-100 placeholder-blue-400' : 'bg-blue-950 border-blue-700 text-blue-100 placeholder-blue-300'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.balance_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, balance_qty: e.target.value }))}
+                      placeholder="Filter Bal"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 text-right ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.remarks}
+                      onChange={e => setColFilters(prev => ({ ...prev, remarks: e.target.value }))}
+                      placeholder="Filter Remarks"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
                   </th>
                 </tr>
               </thead>
@@ -580,7 +1050,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       }`}
                     >
                       {/* Buyer / Store Ref / Job */}
-                      <td className={`py-2.5 px-3 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         <div className="font-bold text-xs leading-tight">{item.buyer_name || item.buyer}</div>
                         <div className="mt-1">
                           <span className={`inline-block font-mono text-[11px] font-extrabold px-1.5 py-0.5 rounded border ${
@@ -590,15 +1060,32 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                           </span>
                         </div>
                         {item.job_no && (
-                          <div className="text-[10px] text-indigo-500 font-mono mt-0.5 font-bold">
+                          <div className="text-[10px] text-indigo-500 dark:text-indigo-400 font-mono mt-0.5 font-bold">
                             Job: {item.job_no}
                           </div>
                         )}
                       </td>
 
+                      {/* Booking Date & Booking Challan / Order No */}
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {item.date || 'N/A'}
+                        </div>
+                        {item.booking_challan && (
+                          <div className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">
+                            Ch: {item.booking_challan}
+                          </div>
+                        )}
+                        {item.order_no && (
+                          <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                            Ord: {item.order_no}
+                          </div>
+                        )}
+                      </td>
+
                       {/* Style & Colour */}
-                      <td className={`py-2.5 px-3 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
-                        <div className="font-bold text-xs truncate max-w-[150px]" title={item.style}>
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                        <div className="font-bold text-xs truncate max-w-[140px]" title={item.style}>
                           {item.style}
                         </div>
                         <div className="mt-1">
@@ -608,8 +1095,15 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                         </div>
                       </td>
 
+                      {/* Item Name */}
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                        <div className="font-medium text-xs text-slate-700 dark:text-slate-300 truncate max-w-[130px]" title={item.item_name}>
+                          {item.item_name || 'Sewing Thread'}
+                        </div>
+                      </td>
+
                       {/* Thread Count & Shade No */}
-                      <td className={`py-2.5 px-3 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         <div className="font-bold text-xs text-indigo-700 dark:text-indigo-300">
                           {item.thread_count || item.count || '40/2'}
                         </div>
@@ -618,8 +1112,34 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                         </div>
                       </td>
 
+                      {/* Meter / Consm / SR GT */}
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                        {item.meter && (
+                          <div className="text-[11px] font-mono text-slate-700 dark:text-slate-300">
+                            Mtr: {item.meter}
+                          </div>
+                        )}
+                        {item.per_body_consm && (
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                            Consm: {item.per_body_consm}
+                          </div>
+                        )}
+                        {item.sr_gt && (
+                          <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                            {item.sr_gt}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Supplier */}
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                        <div className="font-semibold text-xs text-slate-700 dark:text-slate-300 truncate max-w-[110px]" title={item.supplier}>
+                          {item.supplier || 'N/A'}
+                        </div>
+                      </td>
+
                       {/* Booking Qty */}
-                      <td className={`py-2.5 px-3 align-top text-right border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                      <td className={`py-2 px-2.5 align-top text-right border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         <div className="font-mono font-extrabold text-xs">
                           <span className={isPending ? "inline-block px-2 py-0.5 bg-amber-200 text-amber-950 font-black border border-amber-400 rounded" : "text-slate-900 dark:text-amber-300"}>
                             {item.booking_qty?.toLocaleString()}
@@ -628,7 +1148,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       </td>
 
                       {/* RECEIVE CELL */}
-                      <td className={`py-2 px-3 align-top border ${
+                      <td className={`py-2 px-2.5 align-top border ${
                         isDark ? 'bg-emerald-950/20 border-slate-800' : 'bg-emerald-50/40 border-slate-300'
                       }`}>
                         <div className="space-y-1.5">
@@ -678,7 +1198,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       {(() => {
                         const isIssueExceeded = Number(state.issue_qty || 0) > Number(state.receive_qty || 0);
                         return (
-                          <td className={`py-2 px-3 align-top border ${
+                          <td className={`py-2 px-2.5 align-top border ${
                             isIssueExceeded
                               ? 'bg-red-50/80 dark:bg-red-950/40 border-red-300 dark:border-red-800'
                               : (isDark ? 'bg-blue-950/20 border-slate-800' : 'bg-blue-50/40 border-slate-300')
@@ -738,7 +1258,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       })()}
 
                       {/* Balance Qty */}
-                      <td className={`py-2.5 px-3 align-top text-right border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                      <td className={`py-2 px-2.5 align-top text-right border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         <div className="font-mono font-black text-xs">
                           <span className={`px-2 py-0.5 rounded border ${
                             state.balance_qty <= 0
@@ -751,7 +1271,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       </td>
 
                       {/* Remarks */}
-                      <td className={`py-2.5 px-3 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                      <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         <input
                           type="text"
                           value={state.remarks}
