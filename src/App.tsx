@@ -105,14 +105,38 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 
   // Twill Tape State
-  const [items, setItems] = useState<TwillTapeItem[]>([]);
+  const [items, setItems] = useState<TwillTapeItem[]>(() => {
+    const saved = localStorage.getItem('twill_tape_items');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [];
+  });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (items.length > 0) {
+      localStorage.setItem('twill_tape_items', JSON.stringify(items));
+    }
+  }, [items]);
+
   // Sewing Thread State
-  const [sewingThreadItems, setSewingThreadItems] = useState<SewingThreadItem[]>([]);
+  const [sewingThreadItems, setSewingThreadItems] = useState<SewingThreadItem[]>(() => {
+    const saved = localStorage.getItem('sewing_thread_items');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [];
+  });
   const [isSewingLoading, setIsSewingLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (sewingThreadItems.length > 0) {
+      localStorage.setItem('sewing_thread_items', JSON.stringify(sewingThreadItems));
+    }
+  }, [sewingThreadItems]);
 
   // Drawstring State
   const [drawstringItems, setDrawstringItems] = useState<DrawstringItem[]>(() => {
@@ -202,48 +226,55 @@ export default function App() {
   }, [drawstringItems]);
 
   const handleUpdateDrawstringItem = async (updatedItem: DrawstringItem) => {
+    let nextList: DrawstringItem[] = [];
     setDrawstringItems(prev => {
       const exists = prev.some(i => i.id === updatedItem.id);
       if (exists) {
-        return prev.map(i => i.id === updatedItem.id ? updatedItem : i);
+        nextList = prev.map(i => i.id === updatedItem.id ? updatedItem : i);
+      } else {
+        nextList = [updatedItem, ...prev];
       }
-      return [updatedItem, ...prev];
+      localStorage.setItem('drawstring_items', JSON.stringify(nextList));
+      return nextList;
     });
-    showToast(`Drawstring ${updatedItem.store_ref} updated successfully!`, 'success');
+    showToast(`Drawstring ${updatedItem.store_ref || updatedItem.id} updated successfully!`, 'success');
 
     // Attempt Supabase upsert
     try {
       const payload = {
         id: updatedItem.id,
-        buyer: updatedItem.buyer_name,
-        buyer_name: updatedItem.buyer_name,
-        booking_date: updatedItem.date,
-        date: updatedItem.date,
-        ref_no_job_no: updatedItem.style,
-        style: updatedItem.style,
-        sr_gt_no: updatedItem.store_ref,
-        store_ref: updatedItem.store_ref,
-        po_no: updatedItem.order_no,
-        order_no: updatedItem.order_no,
-        item_name: updatedItem.drawstring_type,
-        drawstring_type: updatedItem.drawstring_type,
-        color: updatedItem.colour,
-        colour: updatedItem.colour,
-        size: updatedItem.size_mm,
-        size_mm: updatedItem.size_mm,
-        booking_qty: updatedItem.booking_qty,
-        rcv_qty: updatedItem.receive_qty,
-        receive_qty: updatedItem.receive_qty,
-        due_qty: updatedItem.balance_qty,
-        balance_qty: updatedItem.balance_qty,
-        rcvd_date: updatedItem.receive_date,
-        receive_date: updatedItem.receive_date,
-        receive_challan: updatedItem.receive_challan,
-        remarks: updatedItem.remarks,
-        unit: updatedItem.unit,
-        receive_logs: updatedItem.receive_logs
+        buyer: updatedItem.buyer_name || updatedItem.buyer || '',
+        buyer_name: updatedItem.buyer_name || updatedItem.buyer || '',
+        booking_date: updatedItem.date || updatedItem.booking_date || '',
+        date: updatedItem.date || updatedItem.booking_date || '',
+        ref_no_job_no: updatedItem.style || updatedItem.ref_no_job_no || '',
+        style: updatedItem.style || updatedItem.ref_no_job_no || '',
+        sr_gt_no: updatedItem.store_ref || updatedItem.sr_gt_no || '',
+        store_ref: updatedItem.store_ref || updatedItem.sr_gt_no || '',
+        po_no: updatedItem.order_no || updatedItem.po_no || '',
+        order_no: updatedItem.order_no || updatedItem.po_no || '',
+        item_name: updatedItem.drawstring_type || updatedItem.item_name || '',
+        drawstring_type: updatedItem.drawstring_type || updatedItem.item_name || '',
+        color: updatedItem.colour || updatedItem.color || '',
+        colour: updatedItem.colour || updatedItem.color || '',
+        size: updatedItem.size_mm || updatedItem.size || '',
+        size_mm: updatedItem.size_mm || updatedItem.size || '',
+        booking_qty: Number(updatedItem.booking_qty) || 0,
+        rcv_qty: Number(updatedItem.receive_qty ?? updatedItem.rcv_qty) || 0,
+        receive_qty: Number(updatedItem.receive_qty ?? updatedItem.rcv_qty) || 0,
+        due_qty: Number(updatedItem.balance_qty ?? updatedItem.due_qty) || 0,
+        balance_qty: Number(updatedItem.balance_qty ?? updatedItem.due_qty) || 0,
+        last_rcvd_qty: Number(updatedItem.last_rcvd_qty) || 0,
+        rcvd_date: updatedItem.receive_date || updatedItem.rcvd_date || '',
+        receive_date: updatedItem.receive_date || updatedItem.rcvd_date || '',
+        receive_challan: updatedItem.receive_challan || '',
+        remarks: updatedItem.remarks || '',
+        unit: updatedItem.unit || 'PCS'
       };
-      await supabase.from('drawstring').upsert([payload]);
+      const { error } = await supabase.from('drawstring').upsert([payload]);
+      if (error) {
+        console.warn("Supabase drawstring upsert notice:", error.message);
+      }
     } catch (err) {
       console.warn("Supabase drawstring sync notice:", err);
     }
@@ -257,33 +288,38 @@ export default function App() {
       id: Date.now() + idx
     }));
 
-    setDrawstringItems(prev => [...itemsWithIds, ...prev]);
+    setDrawstringItems(prev => {
+      const nextList = [...itemsWithIds, ...prev];
+      localStorage.setItem('drawstring_items', JSON.stringify(nextList));
+      return nextList;
+    });
     showToast(`${itemsWithIds.length} New Drawstring Booking item(s) created!`, 'success');
 
     try {
       const payloads = itemsWithIds.map(itemWithId => ({
         id: itemWithId.id,
-        buyer: itemWithId.buyer_name || itemWithId.buyer,
-        buyer_name: itemWithId.buyer_name || itemWithId.buyer,
-        booking_date: itemWithId.date || itemWithId.booking_date,
-        date: itemWithId.date || itemWithId.booking_date,
-        ref_no_job_no: itemWithId.style || itemWithId.ref_no_job_no,
-        style: itemWithId.style || itemWithId.ref_no_job_no,
-        sr_gt_no: itemWithId.store_ref || itemWithId.sr_gt_no,
-        store_ref: itemWithId.store_ref || itemWithId.sr_gt_no,
-        po_no: itemWithId.order_no || itemWithId.po_no,
-        order_no: itemWithId.order_no || itemWithId.po_no,
-        item_name: itemWithId.drawstring_type || itemWithId.item_name,
-        drawstring_type: itemWithId.drawstring_type || itemWithId.item_name,
-        color: itemWithId.colour || itemWithId.color,
-        colour: itemWithId.colour || itemWithId.color,
-        size: itemWithId.size_mm || itemWithId.size,
-        size_mm: itemWithId.size_mm || itemWithId.size,
-        booking_qty: itemWithId.booking_qty,
-        rcv_qty: itemWithId.receive_qty ?? itemWithId.rcv_qty ?? 0,
-        receive_qty: itemWithId.receive_qty ?? itemWithId.rcv_qty ?? 0,
-        due_qty: itemWithId.balance_qty ?? itemWithId.due_qty ?? itemWithId.booking_qty,
-        balance_qty: itemWithId.balance_qty ?? itemWithId.due_qty ?? itemWithId.booking_qty,
+        buyer: itemWithId.buyer_name || itemWithId.buyer || '',
+        buyer_name: itemWithId.buyer_name || itemWithId.buyer || '',
+        booking_date: itemWithId.date || itemWithId.booking_date || '',
+        date: itemWithId.date || itemWithId.booking_date || '',
+        ref_no_job_no: itemWithId.style || itemWithId.ref_no_job_no || '',
+        style: itemWithId.style || itemWithId.ref_no_job_no || '',
+        sr_gt_no: itemWithId.store_ref || itemWithId.sr_gt_no || '',
+        store_ref: itemWithId.store_ref || itemWithId.sr_gt_no || '',
+        po_no: itemWithId.order_no || itemWithId.po_no || '',
+        order_no: itemWithId.order_no || itemWithId.po_no || '',
+        item_name: itemWithId.drawstring_type || itemWithId.item_name || '',
+        drawstring_type: itemWithId.drawstring_type || itemWithId.item_name || '',
+        color: itemWithId.colour || itemWithId.color || '',
+        colour: itemWithId.colour || itemWithId.color || '',
+        size: itemWithId.size_mm || itemWithId.size || '',
+        size_mm: itemWithId.size_mm || itemWithId.size || '',
+        booking_qty: Number(itemWithId.booking_qty) || 0,
+        rcv_qty: Number(itemWithId.receive_qty ?? itemWithId.rcv_qty) || 0,
+        receive_qty: Number(itemWithId.receive_qty ?? itemWithId.rcv_qty) || 0,
+        due_qty: Number(itemWithId.balance_qty ?? itemWithId.due_qty ?? itemWithId.booking_qty) || 0,
+        balance_qty: Number(itemWithId.balance_qty ?? itemWithId.due_qty ?? itemWithId.booking_qty) || 0,
+        last_rcvd_qty: Number(itemWithId.last_rcvd_qty) || 0,
         rcvd_date: itemWithId.receive_date || itemWithId.rcvd_date || '',
         receive_date: itemWithId.receive_date || itemWithId.rcvd_date || '',
         receive_challan: itemWithId.receive_challan || '',
@@ -291,18 +327,28 @@ export default function App() {
         unit: itemWithId.unit || 'PCS'
       }));
 
-      await supabase.from('drawstring').insert(payloads);
+      const { error } = await supabase.from('drawstring').upsert(payloads);
+      if (error) {
+        console.warn("Supabase drawstring insert notice:", error.message);
+      }
     } catch (err) {
       console.warn("Supabase drawstring insert notice:", err);
     }
   };
 
   const handleDeleteDrawstringItem = async (id: number) => {
-    setDrawstringItems(prev => prev.filter(i => i.id !== id));
+    setDrawstringItems(prev => {
+      const nextList = prev.filter(i => i.id !== id);
+      localStorage.setItem('drawstring_items', JSON.stringify(nextList));
+      return nextList;
+    });
     showToast(`Drawstring item #${id} deleted`, 'info');
 
     try {
-      await supabase.from('drawstring').delete().eq('id', id);
+      const { error } = await supabase.from('drawstring').delete().eq('id', id);
+      if (error) {
+        console.warn("Supabase drawstring delete notice:", error.message);
+      }
     } catch (err) {
       console.warn("Supabase drawstring delete notice:", err);
     }
@@ -480,7 +526,59 @@ export default function App() {
     fetchDrawstringInventory();
   }, []);
 
+  const syncUnsyncedDrawstring = async (unsyncedItems: DrawstringItem[]) => {
+    if (!unsyncedItems || unsyncedItems.length === 0) return;
+    try {
+      const payloads = unsyncedItems.map(item => ({
+        id: item.id,
+        buyer: item.buyer_name || item.buyer || '',
+        buyer_name: item.buyer_name || item.buyer || '',
+        booking_date: item.date || item.booking_date || '',
+        date: item.date || item.booking_date || '',
+        ref_no_job_no: item.style || item.ref_no_job_no || '',
+        style: item.style || item.ref_no_job_no || '',
+        sr_gt_no: item.store_ref || item.sr_gt_no || '',
+        store_ref: item.store_ref || item.sr_gt_no || '',
+        po_no: item.order_no || item.po_no || '',
+        order_no: item.order_no || item.po_no || '',
+        item_name: item.drawstring_type || item.item_name || '',
+        drawstring_type: item.drawstring_type || item.item_name || '',
+        color: item.colour || item.color || '',
+        colour: item.colour || item.color || '',
+        size: item.size_mm || item.size || '',
+        size_mm: item.size_mm || item.size || '',
+        booking_qty: Number(item.booking_qty) || 0,
+        rcv_qty: Number(item.receive_qty ?? item.rcv_qty) || 0,
+        receive_qty: Number(item.receive_qty ?? item.rcv_qty) || 0,
+        due_qty: Number(item.balance_qty ?? item.due_qty) || 0,
+        balance_qty: Number(item.balance_qty ?? item.due_qty) || 0,
+        last_rcvd_qty: Number(item.last_rcvd_qty) || 0,
+        rcvd_date: item.receive_date || item.rcvd_date || '',
+        receive_date: item.receive_date || item.rcvd_date || '',
+        receive_challan: item.receive_challan || '',
+        remarks: item.remarks || '',
+        unit: item.unit || 'PCS'
+      }));
+
+      const { error } = await supabase.from('drawstring').upsert(payloads);
+      if (error) {
+        console.warn("Supabase drawstring auto-sync notice:", error.message);
+      } else {
+        console.log("Successfully auto-synced local drawstring items to Supabase:", unsyncedItems.length);
+      }
+    } catch (e) {
+      console.warn("Drawstring auto-sync error:", e);
+    }
+  };
+
   const fetchDrawstringInventory = async () => {
+    // 1. Read local storage first
+    const savedLocal = localStorage.getItem('drawstring_items');
+    let localItems: DrawstringItem[] = [];
+    if (savedLocal) {
+      try { localItems = JSON.parse(savedLocal); } catch (e) {}
+    }
+
     try {
       const records = await fetchAllRowsFromSupabase<any>('drawstring');
       if (records && records.length > 0) {
@@ -518,10 +616,27 @@ export default function App() {
             issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
           };
         });
-        setDrawstringItems(mappedRecords);
+
+        // 2. Merge: Preserve any local items that are not in Supabase yet
+        const supabaseIds = new Set(mappedRecords.map(r => r.id));
+        const unsyncedLocal = localItems.filter(l => !supabaseIds.has(l.id));
+
+        const merged = [...mappedRecords, ...unsyncedLocal];
+        setDrawstringItems(merged);
+        localStorage.setItem('drawstring_items', JSON.stringify(merged));
+
+        if (unsyncedLocal.length > 0) {
+          syncUnsyncedDrawstring(unsyncedLocal);
+        }
+      } else if (localItems.length > 0) {
+        setDrawstringItems(localItems);
+        syncUnsyncedDrawstring(localItems);
       }
     } catch (err) {
       console.error("Drawstring connection notice (using local state):", err);
+      if (localItems.length > 0) {
+        setDrawstringItems(localItems);
+      }
     }
   };
 
