@@ -249,7 +249,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
       });
       return nextStates;
     });
-  }, [searchTerm, selectedBuyer, selectedStyle, allItems]);
+  }, [searchTerm, selectedBuyer, selectedStyle, allItems, colFilters]);
 
   // Debounced Auto-Save trigger
   useEffect(() => {
@@ -1105,7 +1105,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
               isDark ? 'border-slate-800' : 'border-slate-300'
             }`}>
               <thead>
-                <tr className={`uppercase tracking-wider font-extrabold text-[10px] select-none sticky top-0 z-10 ${
+                <tr className={`uppercase tracking-wider font-extrabold text-[10px] select-none sticky top-0 z-30 shadow-xs ${
                   isDark
                     ? 'bg-slate-900 text-slate-300 border-b-2 border-slate-700'
                     : 'bg-slate-800 text-white border-b-2 border-slate-900'
@@ -1137,8 +1137,8 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                   </th>
                 </tr>
 
-                {/* EXCEL-STYLE COLUMN FILTER INPUT ROW */}
-                <tr className={`border-b ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-700 border-slate-600'}`}>
+                {/* EXCEL-STYLE COLUMN FILTER INPUT ROW (STICKY FROZEN BELOW TITLE HEADER) */}
+                <tr className={`sticky top-[31px] z-20 border-b shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-700 border-slate-600'}`}>
                   <th className="p-1">
                     <input
                       type="text"
