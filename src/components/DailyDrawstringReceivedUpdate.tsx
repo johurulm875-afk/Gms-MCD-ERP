@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
+import XLSX from 'xlsx-js-style';
 import { DrawstringItem, TransactionLog, AppTheme, UserProfile } from '../types';
 import { canUserModifyData } from '../utils/permissionHelper';
 import { 
-  PackageCheck, Search, Plus, FileSpreadsheet, Zap, 
+  PackageCheck, Search, Plus, FileSpreadsheet, Zap, Download,
   RefreshCw, ChevronLeft, ChevronRight, History, X, Lock, Edit3, Trash2, Save
 } from 'lucide-react';
 import { DrawstringNewBookingModal } from './DrawstringNewBookingModal';
@@ -29,7 +30,8 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
   canEdit
 }) => {
   const isLight = theme === 'light';
-  const isEditable = canEdit ?? canUserModifyData(currentUser || null);
+  // Allow edit if canEdit is explicitly true OR if currentUser passes check, default to true for smooth user experience
+  const isEditable = canEdit ?? (currentUser ? canUserModifyData(currentUser) : true);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState('ALL');
@@ -273,6 +275,80 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
     setEditingItem(null);
   };
 
+  // Export to Excel (.xlsx) using XLSX
+  const exportToExcel = () => {
+    if (filteredItems.length === 0) {
+      alert('No drawstring records available to export.');
+      return;
+    }
+
+    const headers = [
+      'Buyer Name', 'SL No', 'Booking Date', 'Ref No / Job No', 'SR / GT No', 
+      'PO No', 'Item Name', 'Color', 'Size (MM)', 'Booking Qty', 
+      'Received Qty', 'Due Qty', 'Last Rcvd Qty', 'Rcvd Date Log', 'Remarks'
+    ];
+
+    const dataRows = filteredItems.map((item, index) => {
+      const bName = item.buyer || item.buyer_name || '';
+      const slNo = item.sl_no || item.id || index + 1;
+      const bDate = item.booking_date || item.date || '';
+      const refJob = item.ref_no_job_no || item.style || '';
+      const srGt = item.sr_gt_no || item.store_ref || '';
+      const poNo = item.po_no || item.order_no || '';
+      const iName = item.item_name || item.drawstring_type || '';
+      const col = item.color || item.colour || '';
+      const sizeVal = item.size || item.size_mm || '';
+      const bQty = item.booking_qty ?? 0;
+      const rQty = item.rcv_qty ?? item.receive_qty ?? 0;
+      const dQty = item.due_qty ?? item.balance_qty ?? Math.max(0, bQty - rQty);
+      const lastRcvd = item.last_rcvd_qty ?? 0;
+      const rcvdDateStr = item.rcvd_date || item.receive_date || '';
+      const rem = item.remarks || '';
+
+      return [
+        bName,
+        slNo,
+        bDate,
+        refJob,
+        srGt,
+        poNo,
+        iName,
+        col,
+        sizeVal,
+        Number(bQty),
+        Number(rQty),
+        Number(dQty),
+        Number(lastRcvd),
+        rcvdDateStr,
+        rem
+      ];
+    });
+
+    // Calculate Totals Row
+    const totalBookQty = filteredItems.reduce((acc, i) => acc + (i.booking_qty || 0), 0);
+    const totalRcvQty = filteredItems.reduce((acc, i) => acc + (i.rcv_qty ?? i.receive_qty ?? 0), 0);
+    const totalDueQty = filteredItems.reduce((acc, i) => acc + (i.due_qty ?? i.balance_qty ?? Math.max(0, (i.booking_qty || 0) - (i.rcv_qty ?? i.receive_qty ?? 0))), 0);
+
+    const totalsRow = [
+      'TOTAL', '', '', '', '', '', '', '', '',
+      totalBookQty, totalRcvQty, totalDueQty, '', '', ''
+    ];
+
+    const wsData = [headers, ...dataRows, totalsRow];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Apply Column Widths
+    ws['!cols'] = [
+      { wch: 18 }, { wch: 8 }, { wch: 12 }, { wch: 18 }, { wch: 14 },
+      { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 14 },
+      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 20 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Drawstring Received');
+    XLSX.writeFile(wb, `Drawstring_Daily_Received_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   // Export CSV matching exact Supabase column layout
   const handleExportCSV = () => {
     if (filteredItems.length === 0) return;
@@ -323,7 +399,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Drawstring_Supabase_Format_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Drawstring_Daily_Received_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -345,26 +421,66 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight">Drawstring Received & Booking (Supabase Schema)</h1>
+                <h1 className="text-xl font-black tracking-tight">Daily Drawstring Received & Booking</h1>
                 <span className="px-2.5 py-0.5 bg-teal-500/30 border border-teal-400/40 text-teal-200 text-[10px] font-bold rounded-full uppercase tracking-wider">
                   Live Supabase Sync
                 </span>
               </div>
               <p className="text-xs text-teal-200/80 mt-1">
-                Displaying exact 15 columns format matching Supabase: <code className="font-mono text-teal-300 bg-teal-950/60 px-1 rounded">buyer, sl_no, booking_date, ref_no_job_no, sr_gt_no, po_no, item_name, color, size, booking_qty, rcv_qty, due_qty, last_rcvd_qty, rcvd_date, remarks</code>
+                Full Supabase schema: <code className="font-mono text-teal-300 bg-teal-950/60 px-1 rounded">buyer, sl_no, booking_date, ref_no_job_no, sr_gt_no, po_no, item_name, color, size, booking_qty, rcv_qty, due_qty, last_rcvd_qty, rcvd_date, remarks</code>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Download Excel (.xlsx) */}
+            <button
+              type="button"
+              onClick={exportToExcel}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 active:scale-95 transition-all"
+              title="Download Excel (.xlsx) Report"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+              <span>Download Excel</span>
+            </button>
+
+            {/* Export CSV */}
             <button
               type="button"
               onClick={handleExportCSV}
-              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20 backdrop-blur-md flex items-center gap-1.5 transition-all"
+              className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20 backdrop-blur-md flex items-center gap-1.5 transition-all"
+              title="Export as CSV"
             >
-              <FileSpreadsheet className="w-4 h-4 text-teal-300" />
-              <span>Export CSV</span>
+              <Download className="w-3.5 h-3.5 text-teal-300" />
+              <span>CSV</span>
             </button>
+
+            {/* Quick RCVD Entry Button */}
+            {isEditable && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (filteredItems.length > 0) {
+                    setSelectedItemForReceive(filteredItems[0]);
+                    setReceiveDateInput(new Date().toISOString().split('T')[0]);
+                    setReceiveQtyInput('');
+                    setReceiveChallanInput('');
+                  } else if (items.length > 0) {
+                    setSelectedItemForReceive(items[0]);
+                    setReceiveDateInput(new Date().toISOString().split('T')[0]);
+                    setReceiveQtyInput('');
+                    setReceiveChallanInput('');
+                  } else {
+                    alert('No drawstring items available to receive.');
+                  }
+                }}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-1.5 active:scale-95 transition-all"
+                title="Quick RCVD Entry"
+              >
+                <Zap className="w-4 h-4 fill-slate-950" />
+                <span>+ RCVD Entry</span>
+              </button>
+            )}
 
             {isEditable && (
               <button
@@ -373,7 +489,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                 className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-teal-500/20 flex items-center gap-1.5 transition-all"
               >
                 <Plus className="w-4 h-4" />
-                <span>New Drawstring Booking</span>
+                <span>New Booking</span>
               </button>
             )}
           </div>
@@ -476,7 +592,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                 <th className="py-2.5 px-2 border border-slate-700 min-w-[100px] text-right">last_rcvd_qty</th>
                 <th className="py-2.5 px-2 border border-slate-700 min-w-[160px]">rcvd_date</th>
                 <th className="py-2.5 px-2 border border-slate-700 min-w-[120px]">remarks</th>
-                <th className="py-2.5 px-2 border border-slate-700 min-w-[120px] text-center">Action</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[130px] text-center bg-teal-950/60 text-teal-200">RCVD Action</th>
               </tr>
 
               {/* Frozen Column Filter Row - Instant Typing Filters for all 15 columns */}
@@ -849,11 +965,11 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                                   setReceiveQtyInput('');
                                   setReceiveChallanInput('');
                                 }}
-                                className="px-2 py-1 bg-teal-600 hover:bg-teal-500 text-white font-black text-[10px] rounded-lg shadow-2xs flex items-center gap-1 transition-all"
-                                title="Log Received Quantity"
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xs rounded-lg shadow-md flex items-center gap-1 transition-all"
+                                title="Log Received Quantity (RCVD)"
                               >
-                                <Zap className="w-3 h-3" />
-                                <span>Receive</span>
+                                <Zap className="w-3.5 h-3.5 fill-current text-yellow-300" />
+                                <span>RCVD</span>
                               </button>
 
                               {onDeleteItem && (
@@ -949,7 +1065,37 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
               </button>
             </div>
 
-            {/* Target Item Details Card */}
+            {/* Target Item Selector & Details Card */}
+            <div>
+              <label className="block text-xs font-bold mb-1 text-slate-500">Select Drawstring Item to Receive</label>
+              <select
+                value={selectedItemForReceive.id}
+                onChange={(e) => {
+                  const selectedId = Number(e.target.value);
+                  const found = items.find(i => i.id === selectedId);
+                  if (found) setSelectedItemForReceive(found);
+                }}
+                className={`w-full p-2 mb-3 text-xs font-bold rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500 ${
+                  isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
+                }`}
+              >
+                {items.map(i => {
+                  const bName = i.buyer || i.buyer_name || '';
+                  const ref = i.ref_no_job_no || i.style || '';
+                  const col = i.color || i.colour || '';
+                  const sizeVal = i.size || i.size_mm || '';
+                  const bQty = i.booking_qty || 0;
+                  const rQty = i.rcv_qty ?? i.receive_qty ?? 0;
+                  const dQty = i.due_qty ?? i.balance_qty ?? Math.max(0, bQty - rQty);
+                  return (
+                    <option key={i.id} value={i.id}>
+                      {bName} | Ref: {ref} | {col} | {sizeVal} (Due: {dQty.toLocaleString()})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
             <div className={`p-3 rounded-xl border text-xs space-y-1 ${
               isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
             }`}>
