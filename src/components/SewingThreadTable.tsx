@@ -68,6 +68,55 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
   const uniqueBuyers = useMemo(() => Array.from(new Set(items.map(i => i.buyer_name || i.buyer).filter(Boolean))), [items]);
   const uniqueStyles = useMemo(() => Array.from(new Set(items.map(i => i.style).filter(Boolean))), [items]);
 
+  // Per-column filter state for instant typing search
+  const [sewingColFilters, setSewingColFilters] = useState({
+    id: '',
+    buyer: '',
+    job_no: '',
+    style: '',
+    order_no: '',
+    sr_gt: '',
+    store_ref: '',
+    count: '',
+    colour: '',
+    shade: '',
+    booking_qty: '',
+    recv_qty: '',
+    issue_qty: '',
+    balance_qty: '',
+    supplier: '',
+    remarks: ''
+  });
+
+  const handleSewingColFilterChange = (key: keyof typeof sewingColFilters, val: string) => {
+    setSewingColFilters(prev => ({ ...prev, [key]: val }));
+  };
+
+  const clearSewingColFilters = () => {
+    setGeneralSearch('');
+    setSelectedBuyer('ALL');
+    setSelectedStyle('ALL');
+    setStatusFilter('ALL');
+    setSewingColFilters({
+      id: '',
+      buyer: '',
+      job_no: '',
+      style: '',
+      order_no: '',
+      sr_gt: '',
+      store_ref: '',
+      count: '',
+      colour: '',
+      shade: '',
+      booking_qty: '',
+      recv_qty: '',
+      issue_qty: '',
+      balance_qty: '',
+      supplier: '',
+      remarks: ''
+    });
+  };
+
   // Status Helper
   const getItemStatus = (bookingQty: number, receiveQty: number) => {
     if (bookingQty > 0 && (receiveQty || 0) === 0) return 'PENDING';
@@ -103,6 +152,24 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
         if (!match) return false;
       }
 
+      // Column Filters (Live instant search as user types)
+      if (sewingColFilters.id && !String(item.id).includes(sewingColFilters.id)) return false;
+      if (sewingColFilters.buyer && !(item.buyer_name || item.buyer || '').toLowerCase().includes(sewingColFilters.buyer.toLowerCase())) return false;
+      if (sewingColFilters.job_no && !(item.job_no || '').toLowerCase().includes(sewingColFilters.job_no.toLowerCase())) return false;
+      if (sewingColFilters.style && !(item.style || '').toLowerCase().includes(sewingColFilters.style.toLowerCase())) return false;
+      if (sewingColFilters.order_no && !(item.order_no || '').toLowerCase().includes(sewingColFilters.order_no.toLowerCase())) return false;
+      if (sewingColFilters.sr_gt && !(item.sr_gt || '').toLowerCase().includes(sewingColFilters.sr_gt.toLowerCase())) return false;
+      if (sewingColFilters.store_ref && !(item.store_ref || item.s_thread_ref || '').toLowerCase().includes(sewingColFilters.store_ref.toLowerCase())) return false;
+      if (sewingColFilters.count && !(item.thread_count || item.count || '').toLowerCase().includes(sewingColFilters.count.toLowerCase())) return false;
+      if (sewingColFilters.colour && !(item.colour || item.color || '').toLowerCase().includes(sewingColFilters.colour.toLowerCase())) return false;
+      if (sewingColFilters.shade && !(item.shade_no || item.pantone || '').toLowerCase().includes(sewingColFilters.shade.toLowerCase())) return false;
+      if (sewingColFilters.booking_qty && !String(item.booking_qty).includes(sewingColFilters.booking_qty)) return false;
+      if (sewingColFilters.recv_qty && !String(item.receive_qty || 0).includes(sewingColFilters.recv_qty)) return false;
+      if (sewingColFilters.issue_qty && !String(item.issue_qty || 0).includes(sewingColFilters.issue_qty)) return false;
+      if (sewingColFilters.balance_qty && !String(item.balance_qty || 0).includes(sewingColFilters.balance_qty)) return false;
+      if (sewingColFilters.supplier && !(item.supplier || '').toLowerCase().includes(sewingColFilters.supplier.toLowerCase())) return false;
+      if (sewingColFilters.remarks && !(item.remarks || '').toLowerCase().includes(sewingColFilters.remarks.toLowerCase())) return false;
+
       return true;
     }).sort((a, b) => {
       const valA = a[sortField] ?? '';
@@ -111,7 +178,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [items, selectedBuyer, selectedStyle, statusFilter, generalSearch, sortField, sortDirection]);
+  }, [items, selectedBuyer, selectedStyle, statusFilter, generalSearch, sewingColFilters, sortField, sortDirection]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -538,47 +605,111 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
         </button>
       </div>
 
-      {/* TABLE DATA */}
+      {/* TABLE DATA WITH CELL BORDERS AND FROZEN HEADERS */}
       <div className={`border rounded-2xl overflow-hidden shadow-xl ${
-        isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+        isLight ? 'bg-white border-slate-300' : 'bg-slate-900 border-slate-800'
       }`}>
-        <div className="overflow-x-auto min-h-[400px]">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className={`uppercase tracking-wider font-bold text-[11px] border-b select-none whitespace-nowrap ${
-                isLight ? 'bg-slate-800 text-white border-slate-900' : 'bg-slate-950 text-slate-300 border-slate-800'
+        <div className="overflow-auto max-h-[75vh]">
+          <table className={`w-full text-left border-collapse text-xs border ${
+            isLight ? 'border-slate-300' : 'border-slate-700'
+          }`}>
+            <thead className="sticky top-0 z-30 shadow-sm">
+              <tr className={`uppercase tracking-wider font-bold text-[11px] select-none whitespace-nowrap ${
+                isLight ? 'bg-slate-800 text-white' : 'bg-slate-950 text-slate-300'
               }`}>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('id')}>#</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('buyer_name')}>Buyer</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('job_no')}>Job No</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('style')}>Style</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('order_no')}>Order No</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white">SR/GT</th>
-                <th className="py-3 px-3 bg-indigo-950/60 text-indigo-200 cursor-pointer hover:text-white" onClick={() => handleSort('store_ref')}>Store Ref</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('thread_count')}>Count</th>
-                <th className="py-3 px-3">Meter</th>
-                <th className="py-3 px-3">Per Body Consm</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('colour')}>Colour</th>
-                <th className="py-3 px-3 cursor-pointer hover:text-white" onClick={() => handleSort('shade_no')}>Pantone / Shade</th>
-                <th className="py-3 px-3 text-right">Book Qty</th>
-                <th className="py-3 px-3">Recv Date</th>
-                <th className="py-3 px-3">Recv Challan</th>
-                <th className="py-3 px-3 text-right bg-emerald-950/60 text-emerald-200">Recv Qty</th>
-                <th className="py-3 px-3">Issue Date</th>
-                <th className="py-3 px-3">Issue Challan</th>
-                <th className="py-3 px-3 text-right bg-blue-950/60 text-blue-200">Issue Qty</th>
-                <th className="py-3 px-3 text-right">Balance Qty</th>
-                <th className="py-3 px-3">Supplier</th>
-                <th className="py-3 px-3">QC Status</th>
-                <th className="py-3 px-3">Remarks</th>
-                <th className="py-3 px-3 text-center">Actions</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('id')}>#</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('buyer_name')}>Buyer</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('job_no')}>Job No</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('style')}>Style</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('order_no')}>Order No</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white">SR/GT</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 bg-indigo-950/80 text-indigo-200 cursor-pointer hover:text-white" onClick={() => handleSort('store_ref')}>Store Ref</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('thread_count')}>Count</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Meter</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Per Body Consm</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('colour')}>Colour</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 cursor-pointer hover:text-white" onClick={() => handleSort('shade_no')}>Pantone / Shade</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 text-right">Book Qty</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Recv Date</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Recv Challan</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 text-right bg-emerald-950/80 text-emerald-200">Recv Qty</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Issue Date</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Issue Challan</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 text-right bg-blue-950/80 text-blue-200">Issue Qty</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 text-right">Balance Qty</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Supplier</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">QC Status</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">Remarks</th>
+                <th className="py-2.5 px-2 border border-slate-300 dark:border-slate-700 text-center">Actions</th>
+              </tr>
+
+              {/* Frozen Per-Column Filter Input Row */}
+              <tr className={`${isLight ? 'bg-slate-100' : 'bg-slate-900'}`}>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[45px]">
+                  <input type="text" value={sewingColFilters.id} onChange={e => handleSewingColFilterChange('id', e.target.value)} placeholder="#" className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[90px]">
+                  <input type="text" value={sewingColFilters.buyer} onChange={e => handleSewingColFilterChange('buyer', e.target.value)} placeholder="Buyer..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[70px]">
+                  <input type="text" value={sewingColFilters.job_no} onChange={e => handleSewingColFilterChange('job_no', e.target.value)} placeholder="Job..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[90px]">
+                  <input type="text" value={sewingColFilters.style} onChange={e => handleSewingColFilterChange('style', e.target.value)} placeholder="Style..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[80px]">
+                  <input type="text" value={sewingColFilters.order_no} onChange={e => handleSewingColFilterChange('order_no', e.target.value)} placeholder="Order..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]">
+                  <input type="text" value={sewingColFilters.sr_gt} onChange={e => handleSewingColFilterChange('sr_gt', e.target.value)} placeholder="SR/GT..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[90px]">
+                  <input type="text" value={sewingColFilters.store_ref} onChange={e => handleSewingColFilterChange('store_ref', e.target.value)} placeholder="Store Ref..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-bold" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]">
+                  <input type="text" value={sewingColFilters.count} onChange={e => handleSewingColFilterChange('count', e.target.value)} placeholder="Count..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[50px]"></th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[50px]"></th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[80px]">
+                  <input type="text" value={sewingColFilters.colour} onChange={e => handleSewingColFilterChange('colour', e.target.value)} placeholder="Colour..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[80px]">
+                  <input type="text" value={sewingColFilters.shade} onChange={e => handleSewingColFilterChange('shade', e.target.value)} placeholder="Shade..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]">
+                  <input type="text" value={sewingColFilters.booking_qty} onChange={e => handleSewingColFilterChange('booking_qty', e.target.value)} placeholder="Book..." className="w-full px-1 py-0.5 text-[10px] rounded border text-right focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]"></th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]"></th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]">
+                  <input type="text" value={sewingColFilters.recv_qty} onChange={e => handleSewingColFilterChange('recv_qty', e.target.value)} placeholder="Recv..." className="w-full px-1 py-0.5 text-[10px] rounded border text-right focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]"></th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]"></th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]">
+                  <input type="text" value={sewingColFilters.issue_qty} onChange={e => handleSewingColFilterChange('issue_qty', e.target.value)} placeholder="Issue..." className="w-full px-1 py-0.5 text-[10px] rounded border text-right focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[65px]">
+                  <input type="text" value={sewingColFilters.balance_qty} onChange={e => handleSewingColFilterChange('balance_qty', e.target.value)} placeholder="Bal..." className="w-full px-1 py-0.5 text-[10px] rounded border text-right focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[70px]">
+                  <input type="text" value={sewingColFilters.supplier} onChange={e => handleSewingColFilterChange('supplier', e.target.value)} placeholder="Supplier..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[50px]"></th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[70px]">
+                  <input type="text" value={sewingColFilters.remarks} onChange={e => handleSewingColFilterChange('remarks', e.target.value)} placeholder="Remarks..." className="w-full px-1 py-0.5 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white" />
+                </th>
+                <th className="p-1 border border-slate-300 dark:border-slate-700 min-w-[90px] text-center">
+                  <button type="button" onClick={clearSewingColFilters} className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white rounded w-full">Clear</button>
+                </th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800/60">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={25} className="py-12 text-center text-slate-500 font-medium">
+                  <td colSpan={25} className="py-12 text-center text-slate-500 font-medium border border-slate-300 dark:border-slate-700">
                     No sewing thread items found matching criteria.
                   </td>
                 </tr>
@@ -592,44 +723,44 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                     (isFulfilled ? 'border-l-emerald-500' : isPending ? 'border-l-amber-500' : 'border-l-blue-500');
 
                   return (
-                    <tr key={item.id} className={`${rowStyle} transition-colors border-b border-slate-200/80 hover:bg-slate-50/80`}>
-                      <td className="py-3 px-3 font-mono font-bold text-slate-600">{item.id}</td>
-                      <td className="py-3 px-3 font-extrabold whitespace-nowrap text-slate-900">{item.buyer_name || item.buyer || '-'}</td>
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.job_no || '-'}</td>
-                      <td className="py-3 px-3 font-semibold text-slate-800 max-w-[130px] truncate" title={item.style || ''}>{item.style || '-'}</td>
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.order_no || '-'}</td>
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.sr_gt || '-'}</td>
-                      <td className="py-3 px-3 font-mono font-bold text-indigo-900 whitespace-nowrap">{item.store_ref || item.s_thread_ref || '-'}</td>
-                      <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">{item.thread_count || item.count || '-'}</td>
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.meter || '-'}</td>
-                      <td className="py-3 px-3 text-slate-700 whitespace-nowrap">{item.per_body_consm || '-'}</td>
+                    <tr key={item.id} className={`${rowStyle} transition-colors hover:bg-slate-50/80`}>
+                      <td className="py-2.5 px-2 font-mono font-bold text-slate-600 border border-slate-300 dark:border-slate-700">{item.id}</td>
+                      <td className="py-2.5 px-2 font-extrabold whitespace-nowrap text-slate-900 border border-slate-300 dark:border-slate-700">{item.buyer_name || item.buyer || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.job_no || '-'}</td>
+                      <td className="py-2.5 px-2 font-semibold text-slate-800 max-w-[130px] truncate border border-slate-300 dark:border-slate-700" title={item.style || ''}>{item.style || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.order_no || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.sr_gt || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono font-bold text-indigo-900 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.store_ref || item.s_thread_ref || '-'}</td>
+                      <td className="py-2.5 px-2 font-bold text-slate-800 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.thread_count || item.count || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.meter || '-'}</td>
+                      <td className="py-2.5 px-2 text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.per_body_consm || '-'}</td>
 
                       {/* Colour Cell: Highlighted in Yellow ONLY if receive_qty == 0 */}
-                      <td className="py-3 px-3 font-bold uppercase whitespace-nowrap">
+                      <td className="py-2.5 px-2 font-bold uppercase whitespace-nowrap border border-slate-300 dark:border-slate-700">
                         <span className={isPending ? "inline-block px-2.5 py-1 bg-amber-200 text-amber-950 border border-amber-400 rounded-md font-black shadow-2xs" : "text-slate-900 font-extrabold"}>
                           {item.colour || item.color || '-'}
                         </span>
                       </td>
 
-                      <td className="py-3 px-3 font-mono font-semibold text-slate-700 whitespace-nowrap">{item.shade_no || item.pantone || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono font-semibold text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.shade_no || item.pantone || '-'}</td>
 
                       {/* Booking Qty Cell: Highlighted in Yellow ONLY if receive_qty == 0 */}
-                      <td className="py-3 px-3 text-right font-mono font-extrabold whitespace-nowrap">
+                      <td className="py-2.5 px-2 text-right font-mono font-extrabold whitespace-nowrap border border-slate-300 dark:border-slate-700">
                         <span className={isPending ? "inline-block px-2.5 py-1 bg-amber-200 text-amber-950 border border-amber-400 rounded-md font-black shadow-2xs" : "text-slate-900 font-extrabold"}>
                           {item.booking_qty?.toLocaleString() ?? 0}
                         </span>
                       </td>
 
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.receive_date || item.rcvd_date || '-'}</td>
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.receive_challan || item.rcvd_challan || '-'}</td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-emerald-900 whitespace-nowrap">{item.receive_qty?.toLocaleString() ?? 0}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.receive_date || item.rcvd_date || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.receive_challan || item.rcvd_challan || '-'}</td>
+                      <td className="py-2.5 px-2 text-right font-mono font-bold text-emerald-900 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.receive_qty?.toLocaleString() ?? 0}</td>
 
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.issue_date || '-'}</td>
-                      <td className="py-3 px-3 font-mono text-slate-700 whitespace-nowrap">{item.issue_challan || '-'}</td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-blue-900 whitespace-nowrap">{item.issue_qty?.toLocaleString() ?? 0}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.issue_date || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.issue_challan || '-'}</td>
+                      <td className="py-2.5 px-2 text-right font-mono font-bold text-blue-900 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.issue_qty?.toLocaleString() ?? 0}</td>
 
                       {/* Balance Qty Cell: if balance is 0, clean white background badge */}
-                      <td className="py-3 px-3 text-right font-mono font-extrabold whitespace-nowrap">
+                      <td className="py-2.5 px-2 text-right font-mono font-extrabold whitespace-nowrap border border-slate-300 dark:border-slate-700">
                         <span className={`px-2 py-0.5 rounded border ${
                           item.balance_qty <= 0
                             ? 'bg-slate-100 text-slate-600 border-slate-200 font-bold'
@@ -639,8 +770,8 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                         </span>
                       </td>
 
-                      <td className="py-3 px-3 text-slate-700 whitespace-nowrap">{item.supplier || '-'}</td>
-                      <td className="py-3 px-3 whitespace-nowrap">
+                      <td className="py-2.5 px-2 text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.supplier || '-'}</td>
+                      <td className="py-2.5 px-2 whitespace-nowrap border border-slate-300 dark:border-slate-700">
                         {item.qc_not_ok ? (
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
                             QC NOT OK
@@ -651,7 +782,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-3 text-slate-600 text-[11px] max-w-[150px] truncate" title={item.remarks}>{item.remarks || '-'}</td>
+                      <td className="py-2.5 px-2 text-slate-600 text-[11px] max-w-[150px] truncate border border-slate-300 dark:border-slate-700" title={item.remarks}>{item.remarks || '-'}</td>
                       <td className="py-3 px-3 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1">
                           {isEditable ? (

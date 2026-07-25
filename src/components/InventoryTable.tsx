@@ -235,13 +235,13 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
       </div>
 
       {/* Main Responsive Table */}
-      <div className="overflow-x-auto min-h-[400px]">
-        <table className="w-full text-left border-collapse text-xs">
+      <div className="overflow-auto max-h-[75vh]">
+        <table className="w-full text-left border-collapse text-xs border border-slate-300 dark:border-slate-700">
           
           {/* Sticky Table Header */}
-          <thead>
+          <thead className="sticky top-0 z-30 shadow-sm">
             {/* Header Titles Row */}
-            <tr className="bg-slate-900 text-slate-200 uppercase tracking-wider font-bold text-[11px] select-none sticky top-0 z-10 whitespace-nowrap">
+            <tr className="bg-slate-900 text-slate-200 uppercase tracking-wider font-bold text-[11px] select-none whitespace-nowrap">
               <th className="py-3 px-2 border-b border-slate-800 cursor-pointer hover:bg-slate-800" onClick={() => handleSort('id')}>
                 <div className="flex items-center gap-1">SL (#) <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
               </th>

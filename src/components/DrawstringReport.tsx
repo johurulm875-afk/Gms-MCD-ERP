@@ -360,18 +360,18 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
           <span className="text-xs text-slate-400 font-mono font-bold">{buyerSummary.length} Buyers</span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
+        <div className="overflow-auto max-h-[60vh]">
+          <table className="w-full text-left border-collapse text-xs border border-slate-300 dark:border-slate-700">
+            <thead className="sticky top-0 z-20 shadow-xs">
               <tr className={`font-black uppercase tracking-wider border-b text-[10px] ${
                 isLight ? 'bg-slate-100 text-slate-700' : 'bg-slate-950 text-slate-300'
               }`}>
-                <th className="py-2.5 px-3">Buyer Name</th>
-                <th className="py-2.5 px-3 text-center">Bookings Count</th>
-                <th className="py-2.5 px-3 text-right">Booking Qty</th>
-                <th className="py-2.5 px-3 text-right">Received Qty</th>
-                <th className="py-2.5 px-3 text-right">Balance Qty</th>
-                <th className="py-2.5 px-3 text-right">Completion %</th>
+                <th className="py-2.5 px-3 border border-slate-300 dark:border-slate-700">Buyer Name</th>
+                <th className="py-2.5 px-3 text-center border border-slate-300 dark:border-slate-700">Bookings Count</th>
+                <th className="py-2.5 px-3 text-right border border-slate-300 dark:border-slate-700">Booking Qty</th>
+                <th className="py-2.5 px-3 text-right border border-slate-300 dark:border-slate-700">Received Qty</th>
+                <th className="py-2.5 px-3 text-right border border-slate-300 dark:border-slate-700">Balance Qty</th>
+                <th className="py-2.5 px-3 text-right border border-slate-300 dark:border-slate-700">Completion %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-semibold">
@@ -379,12 +379,12 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
                 const pct = b.bookingQty > 0 ? Math.round((b.receiveQty / b.bookingQty) * 100) : 0;
                 return (
                   <tr key={b.buyer} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="py-2.5 px-3 font-extrabold text-slate-900 dark:text-white">{b.buyer}</td>
-                    <td className="py-2.5 px-3 text-center font-mono">{b.bookings}</td>
-                    <td className="py-2.5 px-3 text-right font-bold">{b.bookingQty.toLocaleString()}</td>
-                    <td className="py-2.5 px-3 text-right font-black text-emerald-600 dark:text-emerald-400">{b.receiveQty.toLocaleString()}</td>
-                    <td className="py-2.5 px-3 text-right font-extrabold text-amber-600 dark:text-amber-400">{b.balanceQty.toLocaleString()}</td>
-                    <td className="py-2.5 px-3 text-right">
+                    <td className="py-2.5 px-3 font-extrabold text-slate-900 dark:text-white border border-slate-300 dark:border-slate-700">{b.buyer}</td>
+                    <td className="py-2.5 px-3 text-center font-mono border border-slate-300 dark:border-slate-700">{b.bookings}</td>
+                    <td className="py-2.5 px-3 text-right font-bold border border-slate-300 dark:border-slate-700">{b.bookingQty.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-right font-black text-emerald-600 dark:text-emerald-400 border border-slate-300 dark:border-slate-700">{b.receiveQty.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-right font-extrabold text-amber-600 dark:text-amber-400 border border-slate-300 dark:border-slate-700">{b.balanceQty.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-right border border-slate-300 dark:border-slate-700">
                       <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
                         pct >= 100 
                           ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' 

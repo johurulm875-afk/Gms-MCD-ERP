@@ -201,7 +201,7 @@ export default function App() {
     localStorage.setItem('drawstring_items', JSON.stringify(drawstringItems));
   }, [drawstringItems]);
 
-  const handleUpdateDrawstringItem = (updatedItem: DrawstringItem) => {
+  const handleUpdateDrawstringItem = async (updatedItem: DrawstringItem) => {
     setDrawstringItems(prev => {
       const exists = prev.some(i => i.id === updatedItem.id);
       if (exists) {
@@ -210,20 +210,102 @@ export default function App() {
       return [updatedItem, ...prev];
     });
     showToast(`Drawstring ${updatedItem.store_ref} updated successfully!`, 'success');
+
+    // Attempt Supabase upsert
+    try {
+      const payload = {
+        id: updatedItem.id,
+        buyer: updatedItem.buyer_name,
+        buyer_name: updatedItem.buyer_name,
+        booking_date: updatedItem.date,
+        date: updatedItem.date,
+        ref_no_job_no: updatedItem.style,
+        style: updatedItem.style,
+        sr_gt_no: updatedItem.store_ref,
+        store_ref: updatedItem.store_ref,
+        po_no: updatedItem.order_no,
+        order_no: updatedItem.order_no,
+        item_name: updatedItem.drawstring_type,
+        drawstring_type: updatedItem.drawstring_type,
+        color: updatedItem.colour,
+        colour: updatedItem.colour,
+        size: updatedItem.size_mm,
+        size_mm: updatedItem.size_mm,
+        booking_qty: updatedItem.booking_qty,
+        rcv_qty: updatedItem.receive_qty,
+        receive_qty: updatedItem.receive_qty,
+        due_qty: updatedItem.balance_qty,
+        balance_qty: updatedItem.balance_qty,
+        rcvd_date: updatedItem.receive_date,
+        receive_date: updatedItem.receive_date,
+        receive_challan: updatedItem.receive_challan,
+        remarks: updatedItem.remarks,
+        unit: updatedItem.unit,
+        receive_logs: updatedItem.receive_logs
+      };
+      await supabase.from('drawstring').upsert([payload]);
+    } catch (err) {
+      console.warn("Supabase drawstring sync notice:", err);
+    }
   };
 
-  const handleAddDrawstringItem = (newItem: Omit<DrawstringItem, 'id'>) => {
-    const itemWithId: DrawstringItem = {
-      ...newItem,
-      id: Date.now()
-    };
-    setDrawstringItems(prev => [itemWithId, ...prev]);
-    showToast(`New Drawstring Booking ${itemWithId.store_ref} created!`, 'success');
+  const handleAddDrawstringItem = async (newItemData: Omit<DrawstringItem, 'id'> | Omit<DrawstringItem, 'id'>[]) => {
+    const newItemsArray = Array.isArray(newItemData) ? newItemData : [newItemData];
+    
+    const itemsWithIds: DrawstringItem[] = newItemsArray.map((item, idx) => ({
+      ...item,
+      id: Date.now() + idx
+    }));
+
+    setDrawstringItems(prev => [...itemsWithIds, ...prev]);
+    showToast(`${itemsWithIds.length} New Drawstring Booking item(s) created!`, 'success');
+
+    try {
+      const payloads = itemsWithIds.map(itemWithId => ({
+        id: itemWithId.id,
+        buyer: itemWithId.buyer_name || itemWithId.buyer,
+        buyer_name: itemWithId.buyer_name || itemWithId.buyer,
+        booking_date: itemWithId.date || itemWithId.booking_date,
+        date: itemWithId.date || itemWithId.booking_date,
+        ref_no_job_no: itemWithId.style || itemWithId.ref_no_job_no,
+        style: itemWithId.style || itemWithId.ref_no_job_no,
+        sr_gt_no: itemWithId.store_ref || itemWithId.sr_gt_no,
+        store_ref: itemWithId.store_ref || itemWithId.sr_gt_no,
+        po_no: itemWithId.order_no || itemWithId.po_no,
+        order_no: itemWithId.order_no || itemWithId.po_no,
+        item_name: itemWithId.drawstring_type || itemWithId.item_name,
+        drawstring_type: itemWithId.drawstring_type || itemWithId.item_name,
+        color: itemWithId.colour || itemWithId.color,
+        colour: itemWithId.colour || itemWithId.color,
+        size: itemWithId.size_mm || itemWithId.size,
+        size_mm: itemWithId.size_mm || itemWithId.size,
+        booking_qty: itemWithId.booking_qty,
+        rcv_qty: itemWithId.receive_qty ?? itemWithId.rcv_qty ?? 0,
+        receive_qty: itemWithId.receive_qty ?? itemWithId.rcv_qty ?? 0,
+        due_qty: itemWithId.balance_qty ?? itemWithId.due_qty ?? itemWithId.booking_qty,
+        balance_qty: itemWithId.balance_qty ?? itemWithId.due_qty ?? itemWithId.booking_qty,
+        rcvd_date: itemWithId.receive_date || itemWithId.rcvd_date || '',
+        receive_date: itemWithId.receive_date || itemWithId.rcvd_date || '',
+        receive_challan: itemWithId.receive_challan || '',
+        remarks: itemWithId.remarks || '',
+        unit: itemWithId.unit || 'PCS'
+      }));
+
+      await supabase.from('drawstring').insert(payloads);
+    } catch (err) {
+      console.warn("Supabase drawstring insert notice:", err);
+    }
   };
 
-  const handleDeleteDrawstringItem = (id: number) => {
+  const handleDeleteDrawstringItem = async (id: number) => {
     setDrawstringItems(prev => prev.filter(i => i.id !== id));
     showToast(`Drawstring item #${id} deleted`, 'info');
+
+    try {
+      await supabase.from('drawstring').delete().eq('id', id);
+    } catch (err) {
+      console.warn("Supabase drawstring delete notice:", err);
+    }
   };
 
   // Planning State
@@ -395,7 +477,53 @@ export default function App() {
   useEffect(() => {
     fetchInventory();
     fetchSewingInventory();
+    fetchDrawstringInventory();
   }, []);
+
+  const fetchDrawstringInventory = async () => {
+    try {
+      const records = await fetchAllRowsFromSupabase<any>('drawstring');
+      if (records && records.length > 0) {
+        const mappedRecords: DrawstringItem[] = records.map((r: any, idx: number) => {
+          const bName = r.buyer_name || r.buyer || 'GMS Buyer';
+          const stRef = r.store_ref || r.sr_gt_no || `DS-${r.sl_no || r.id || idx + 1}`;
+          const bQty = Number(r.booking_qty ?? 0);
+          const rQty = Number(r.receive_qty ?? r.rcv_qty ?? 0);
+          const iQty = Number(r.issue_qty ?? 0);
+          const balQty = r.balance_qty !== undefined ? Number(r.balance_qty) : (r.due_qty !== undefined ? Number(r.due_qty) : Math.max(0, bQty - rQty));
+
+          return {
+            ...r,
+            id: Number(r.id || r.sl_no || idx + 1),
+            buyer_name: bName,
+            date: r.date || r.booking_date || '',
+            booking_challan: r.booking_challan || r.ref_no_job_no || '',
+            style: r.style || r.ref_no_job_no || '',
+            order_no: r.order_no || r.po_no || '',
+            store_ref: stRef,
+            colour: r.colour || r.color || '',
+            drawstring_type: r.drawstring_type || r.item_name || 'Drawstring',
+            size_mm: r.size_mm || r.size || '',
+            unit: (r.unit || 'YDS') as 'YDS' | 'PCS' | 'MTRS',
+            booking_qty: bQty,
+            receive_qty: rQty,
+            receive_date: r.receive_date || r.rcvd_date || '',
+            receive_challan: r.receive_challan || '',
+            issue_qty: iQty,
+            issue_date: r.issue_date || '',
+            issue_challan: r.issue_challan || '',
+            balance_qty: balQty,
+            remarks: r.remarks || '',
+            receive_logs: Array.isArray(r.receive_logs) ? r.receive_logs : [],
+            issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
+          };
+        });
+        setDrawstringItems(mappedRecords);
+      }
+    } catch (err) {
+      console.error("Drawstring connection notice (using local state):", err);
+    }
+  };
 
   const fetchInventory = async () => {
     setIsLoading(true);
@@ -1467,6 +1595,7 @@ export default function App() {
             <MainDashboard
               twillItems={items}
               sewingItems={sewingThreadItems}
+              drawstringItems={drawstringItems}
               userProfile={currentUser}
               onNavigateTab={(tab) => setActiveTab(tab)}
               theme={theme}

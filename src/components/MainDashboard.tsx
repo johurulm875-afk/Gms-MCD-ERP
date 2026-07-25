@@ -1,16 +1,17 @@
 import React, { useMemo } from 'react';
-import { TwillTapeItem, SewingThreadItem, UserProfile, ActiveTab } from '../types';
+import { TwillTapeItem, SewingThreadItem, DrawstringItem, UserProfile, ActiveTab } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { 
   Package, CheckCircle2, Clock, Truck, TrendingUp, Layers, ArrowUpRight, 
-  Sparkles, ShieldCheck, ChevronRight, Bookmark, ArrowRight, Tag, Database
+  Sparkles, ShieldCheck, ChevronRight, Bookmark, ArrowRight, Tag, Database, PackageCheck
 } from 'lucide-react';
 
 interface MainDashboardProps {
   twillItems: TwillTapeItem[];
   sewingItems: SewingThreadItem[];
+  drawstringItems?: DrawstringItem[];
   userProfile: UserProfile | null;
   onNavigateTab: (tab: ActiveTab) => void;
 }
@@ -18,6 +19,7 @@ interface MainDashboardProps {
 export const MainDashboard: React.FC<MainDashboardProps> = ({
   twillItems,
   sewingItems,
+  drawstringItems = [],
   userProfile,
   onNavigateTab
 }) => {
@@ -35,45 +37,60 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
     const sewingIssueQty = sewingItems.reduce((acc, i) => acc + (Number(i.issue_qty) || 0), 0);
     const sewingPendingCount = sewingItems.filter(i => i.booking_qty > 0 && i.receive_qty === 0).length;
 
+    // Drawstring stats
+    const drawstringBookingQty = drawstringItems.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0);
+    const drawstringRecvQty = drawstringItems.reduce((acc, i) => acc + (Number(i.receive_qty) || 0), 0);
+    const drawstringIssueQty = drawstringItems.reduce((acc, i) => acc + (Number(i.issue_qty) || 0), 0);
+    const drawstringPendingCount = drawstringItems.filter(i => i.booking_qty > 0 && i.receive_qty === 0).length;
+
     return {
-      totalBookingsCount: twillItems.length + sewingItems.length,
-      totalBookingQty: twillBookingQty + sewingBookingQty,
-      totalReceivedQty: twillRecvQty + sewingRecvQty,
-      totalIssuedQty: twillIssueQty + sewingIssueQty,
-      totalPendingCount: twillPendingCount + sewingPendingCount,
+      totalBookingsCount: twillItems.length + sewingItems.length + drawstringItems.length,
+      totalBookingQty: twillBookingQty + sewingBookingQty + drawstringBookingQty,
+      totalReceivedQty: twillRecvQty + sewingRecvQty + drawstringRecvQty,
+      totalIssuedQty: twillIssueQty + sewingIssueQty + drawstringIssueQty,
+      totalPendingCount: twillPendingCount + sewingPendingCount + drawstringPendingCount,
       twillCount: twillItems.length,
       sewingCount: sewingItems.length,
+      drawstringCount: drawstringItems.length,
       twillRecvQty,
-      sewingRecvQty
+      sewingRecvQty,
+      drawstringRecvQty
     };
-  }, [twillItems, sewingItems]);
+  }, [twillItems, sewingItems, drawstringItems]);
 
   // Buyer Comparison Data for Recharts Bar Chart
   const buyerChartData = useMemo(() => {
-    const buyersMap: Record<string, { buyer: string; twillQty: number; sewingQty: number }> = {};
+    const buyersMap: Record<string, { buyer: string; twillQty: number; sewingQty: number; drawstringQty: number }> = {};
 
     twillItems.forEach(item => {
       const b = item.buyer_name || 'Others';
-      if (!buyersMap[b]) buyersMap[b] = { buyer: b, twillQty: 0, sewingQty: 0 };
+      if (!buyersMap[b]) buyersMap[b] = { buyer: b, twillQty: 0, sewingQty: 0, drawstringQty: 0 };
       buyersMap[b].twillQty += Number(item.receive_qty) || 0;
     });
 
     sewingItems.forEach(item => {
       const b = item.buyer_name || 'Others';
-      if (!buyersMap[b]) buyersMap[b] = { buyer: b, twillQty: 0, sewingQty: 0 };
+      if (!buyersMap[b]) buyersMap[b] = { buyer: b, twillQty: 0, sewingQty: 0, drawstringQty: 0 };
       buyersMap[b].sewingQty += Number(item.receive_qty) || 0;
     });
 
+    drawstringItems.forEach(item => {
+      const b = item.buyer_name || 'Others';
+      if (!buyersMap[b]) buyersMap[b] = { buyer: b, twillQty: 0, sewingQty: 0, drawstringQty: 0 };
+      buyersMap[b].drawstringQty += Number(item.receive_qty) || 0;
+    });
+
     return Object.values(buyersMap).slice(0, 8); // Top buyers
-  }, [twillItems, sewingItems]);
+  }, [twillItems, sewingItems, drawstringItems]);
 
   // Pie Chart Data: Module Breakdown
   const pieData = useMemo(() => [
     { name: 'Twill Tape Received', value: Math.round(kpis.twillRecvQty) },
-    { name: 'Sewing Thread Received', value: Math.round(kpis.sewingRecvQty) }
+    { name: 'Sewing Thread Received', value: Math.round(kpis.sewingRecvQty) },
+    { name: 'Drawstring Received', value: Math.round(kpis.drawstringRecvQty) }
   ], [kpis]);
 
-  const PIE_COLORS = ['#6366f1', '#10b981'];
+  const PIE_COLORS = ['#6366f1', '#10b981', '#06b6d4'];
 
   return (
     <div className="space-y-6 pb-8">
@@ -106,21 +123,29 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => onNavigateTab('twill_tape')}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
             >
               <Package className="w-4 h-4" />
-              <span>Twill Tape MCD</span>
+              <span>Twill Tape</span>
             </button>
 
             <button
               onClick={() => onNavigateTab('sewing_thread')}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Sewing Thread MCD</span>
+              <span>Sewing Thread</span>
+            </button>
+
+            <button
+              onClick={() => onNavigateTab('drawstring_received')}
+              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+            >
+              <PackageCheck className="w-4 h-4" />
+              <span>Drawstring MCD</span>
             </button>
           </div>
         </div>
@@ -144,8 +169,9 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-            <span>Twill Tape: {kpis.twillCount}</span>
-            <span>Sewing Thread: {kpis.sewingCount}</span>
+            <span>Twill: {kpis.twillCount}</span>
+            <span>Thread: {kpis.sewingCount}</span>
+            <span>Drawstring: {kpis.drawstringCount}</span>
           </div>
         </div>
 
@@ -163,9 +189,10 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
               <span>Stock Received in Store</span>
             </div>
           </div>
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-medium">
             <span>Twill: {Math.round(kpis.twillRecvQty).toLocaleString()}</span>
             <span>Thread: {Math.round(kpis.sewingRecvQty).toLocaleString()}</span>
+            <span>DS: {Math.round(kpis.drawstringRecvQty).toLocaleString()}</span>
           </div>
         </div>
 
@@ -240,6 +267,7 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
                   <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                   <Bar dataKey="twillQty" name="Twill Tape Recv Qty" fill="#6366f1" radius={[6, 6, 0, 0]} />
                   <Bar dataKey="sewingQty" name="Sewing Thread Recv Qty" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="drawstringQty" name="Drawstring Recv Qty" fill="#06b6d4" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -294,6 +322,14 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
                 <span className="text-slate-300">Sewing Thread Total</span>
               </div>
               <span className="text-white font-mono">{Math.round(kpis.sewingRecvQty).toLocaleString()}</span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs font-semibold">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-cyan-500" />
+                <span className="text-slate-300">Drawstring Total</span>
+              </div>
+              <span className="text-white font-mono">{Math.round(kpis.drawstringRecvQty).toLocaleString()}</span>
             </div>
           </div>
         </div>

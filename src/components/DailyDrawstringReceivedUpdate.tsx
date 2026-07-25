@@ -2,17 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { DrawstringItem, TransactionLog, AppTheme, UserProfile } from '../types';
 import { canUserModifyData } from '../utils/permissionHelper';
 import { 
-  PackageCheck, Search, Filter, Plus, FileSpreadsheet, Zap, 
-  Calendar, CheckCircle2, Clock, AlertCircle, RefreshCw, ChevronLeft, 
-  ChevronRight, ArrowUpDown, History, Layers, Check, X, Lock, Edit3, Trash2, Save
+  PackageCheck, Search, Plus, FileSpreadsheet, Zap, 
+  RefreshCw, ChevronLeft, ChevronRight, History, X, Lock, Edit3, Trash2, Save
 } from 'lucide-react';
-import { getItemRowStyle } from '../utils/statusHelper';
+import { DrawstringNewBookingModal } from './DrawstringNewBookingModal';
 
 interface DailyDrawstringReceivedUpdateProps {
   items: DrawstringItem[];
   isLoading?: boolean;
   onUpdateItem: (updatedItem: DrawstringItem) => void;
-  onAddItem?: (newItem: Omit<DrawstringItem, 'id'>) => void;
+  onAddItem?: (newItem: Omit<DrawstringItem, 'id'> | Omit<DrawstringItem, 'id'>[]) => Promise<void> | void;
   onDeleteItem?: (id: number) => void;
   theme?: AppTheme;
   currentUser?: UserProfile | null;
@@ -37,6 +36,55 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [dateFilter, setDateFilter] = useState('');
 
+  // Per-column filter inputs matching all 15 Supabase columns
+  const [colFilters, setColFilters] = useState({
+    buyer: '',
+    sl_no: '',
+    booking_date: '',
+    ref_no_job_no: '',
+    sr_gt_no: '',
+    po_no: '',
+    item_name: '',
+    color: '',
+    size: '',
+    booking_qty: '',
+    rcv_qty: '',
+    due_qty: '',
+    last_rcvd_qty: '',
+    rcvd_date: '',
+    remarks: ''
+  });
+
+  const handleColFilterChange = (key: keyof typeof colFilters, val: string) => {
+    setColFilters(prev => ({ ...prev, [key]: val }));
+    setCurrentPage(1);
+  };
+
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setSelectedBuyer('ALL');
+    setSelectedStatus('ALL');
+    setDateFilter('');
+    setColFilters({
+      buyer: '',
+      sl_no: '',
+      booking_date: '',
+      ref_no_job_no: '',
+      sr_gt_no: '',
+      po_no: '',
+      item_name: '',
+      color: '',
+      size: '',
+      booking_qty: '',
+      rcv_qty: '',
+      due_qty: '',
+      last_rcvd_qty: '',
+      rcvd_date: '',
+      remarks: ''
+    });
+    setCurrentPage(1);
+  };
+
   // Full Row Edit State
   const [editingItem, setEditingItem] = useState<DrawstringItem | null>(null);
 
@@ -47,72 +95,87 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
   const [receiveDateInput, setReceiveDateInput] = useState(new Date().toISOString().split('T')[0]);
   const [remarksInput, setRemarksInput] = useState('');
 
-  // Add New Modal State
+  // New Booking Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newItemData, setNewItemData] = useState({
-    buyer_name: '',
-    date: new Date().toISOString().split('T')[0],
-    booking_challan: '',
-    style: '',
-    order_no: '',
-    store_ref: '',
-    colour: '',
-    drawstring_type: 'Round Drawstring',
-    size_mm: '6mm',
-    unit: 'YDS' as 'YDS' | 'PCS' | 'MTRS',
-    booking_qty: 0,
-    receive_qty: 0,
-    receive_date: '',
-    receive_challan: '',
-    issue_qty: 0,
-    issue_date: '',
-    issue_challan: '',
-    balance_qty: 0,
-    remarks: ''
-  });
 
   // History Modal State
   const [historyItem, setHistoryItem] = useState<DrawstringItem | null>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const pageSize = 25;
 
   // Unique Buyers for Filter
   const buyers = useMemo(() => {
-    const list = Array.from(new Set(items.map(i => i.buyer_name))).filter(Boolean);
+    const list = Array.from(new Set(items.map(i => i.buyer || i.buyer_name))).filter(Boolean);
     return ['ALL', ...list];
   }, [items]);
 
-  // Filtered Items
+  // Instant Filtered Items
   const filteredItems = useMemo(() => {
     return items.filter(item => {
+      const bName = item.buyer || item.buyer_name || '';
+      const bDate = item.booking_date || item.date || '';
+      const refJob = item.ref_no_job_no || item.style || item.booking_challan || '';
+      const srGt = item.sr_gt_no || item.store_ref || '';
+      const poNo = item.po_no || item.order_no || '';
+      const iName = item.item_name || item.drawstring_type || '';
+      const col = item.color || item.colour || '';
+      const sizeVal = item.size || item.size_mm || '';
+      const bQty = item.booking_qty ?? 0;
+      const rQty = item.rcv_qty ?? item.receive_qty ?? 0;
+      const dQty = item.due_qty ?? item.balance_qty ?? Math.max(0, bQty - rQty);
+      const lastRcvd = item.last_rcvd_qty ?? 0;
+      const rcvdDateStr = item.rcvd_date || item.receive_date || '';
+      const rem = item.remarks || '';
+      const slNoStr = String(item.sl_no || item.id || '');
+
       const matchesSearch = 
         !searchTerm ||
-        item.style.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.buyer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.order_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.store_ref.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.colour.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.drawstring_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.booking_challan.toLowerCase().includes(searchTerm.toLowerCase());
+        bName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        refJob.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        srGt.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        poNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        col.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        iName.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesBuyer = selectedBuyer === 'ALL' || item.buyer_name === selectedBuyer;
+      const matchesBuyer = selectedBuyer === 'ALL' || bName === selectedBuyer;
 
       let matchesStatus = true;
       if (selectedStatus === 'PENDING') {
-        matchesStatus = item.receive_qty === 0;
+        matchesStatus = rQty === 0;
       } else if (selectedStatus === 'PARTIAL') {
-        matchesStatus = item.receive_qty > 0 && item.receive_qty < item.booking_qty;
+        matchesStatus = rQty > 0 && rQty < bQty;
       } else if (selectedStatus === 'FULFILLED') {
-        matchesStatus = item.receive_qty >= item.booking_qty;
+        matchesStatus = rQty >= bQty && bQty > 0;
       }
 
-      const matchesDate = !dateFilter || item.receive_date === dateFilter || item.date === dateFilter;
+      const matchesDate = !dateFilter || rcvdDateStr.includes(dateFilter) || bDate.includes(dateFilter);
 
-      return matchesSearch && matchesBuyer && matchesStatus && matchesDate;
+      // Per Column Filters
+      const matchesBuyerCol = !colFilters.buyer || bName.toLowerCase().includes(colFilters.buyer.toLowerCase());
+      const matchesSlCol = !colFilters.sl_no || slNoStr.toLowerCase().includes(colFilters.sl_no.toLowerCase());
+      const matchesBookingDateCol = !colFilters.booking_date || bDate.toLowerCase().includes(colFilters.booking_date.toLowerCase());
+      const matchesRefCol = !colFilters.ref_no_job_no || refJob.toLowerCase().includes(colFilters.ref_no_job_no.toLowerCase());
+      const matchesSrGtCol = !colFilters.sr_gt_no || srGt.toLowerCase().includes(colFilters.sr_gt_no.toLowerCase());
+      const matchesPoCol = !colFilters.po_no || poNo.toLowerCase().includes(colFilters.po_no.toLowerCase());
+      const matchesItemCol = !colFilters.item_name || iName.toLowerCase().includes(colFilters.item_name.toLowerCase());
+      const matchesColorCol = !colFilters.color || col.toLowerCase().includes(colFilters.color.toLowerCase());
+      const matchesSizeCol = !colFilters.size || sizeVal.toLowerCase().includes(colFilters.size.toLowerCase());
+      const matchesBookingQtyCol = !colFilters.booking_qty || String(bQty).includes(colFilters.booking_qty);
+      const matchesRcvQtyCol = !colFilters.rcv_qty || String(rQty).includes(colFilters.rcv_qty);
+      const matchesDueQtyCol = !colFilters.due_qty || String(dQty).includes(colFilters.due_qty);
+      const matchesLastRcvdCol = !colFilters.last_rcvd_qty || String(lastRcvd).includes(colFilters.last_rcvd_qty);
+      const matchesRcvdDateCol = !colFilters.rcvd_date || rcvdDateStr.toLowerCase().includes(colFilters.rcvd_date.toLowerCase());
+      const matchesRemarksCol = !colFilters.remarks || rem.toLowerCase().includes(colFilters.remarks.toLowerCase());
+
+      return matchesSearch && matchesBuyer && matchesStatus && matchesDate &&
+        matchesBuyerCol && matchesSlCol && matchesBookingDateCol && matchesRefCol &&
+        matchesSrGtCol && matchesPoCol && matchesItemCol && matchesColorCol &&
+        matchesSizeCol && matchesBookingQtyCol && matchesRcvQtyCol && matchesDueQtyCol &&
+        matchesLastRcvdCol && matchesRcvdDateCol && matchesRemarksCol;
     });
-  }, [items, searchTerm, selectedBuyer, selectedStatus, dateFilter]);
+  }, [items, searchTerm, selectedBuyer, selectedStatus, dateFilter, colFilters]);
 
   // Pagination Slice
   const totalPages = Math.ceil(filteredItems.length / pageSize) || 1;
@@ -121,7 +184,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
     return filteredItems.slice(start, start + pageSize);
   }, [filteredItems, currentPage]);
 
-  // Submit Receive Update
+  // Submit Receive Update (Sewing Thread receive logic with Drawstring Supabase fields)
   const handleReceiveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItemForReceive) return;
@@ -132,8 +195,19 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
       return;
     }
 
-    const newReceiveTotal = (selectedItemForReceive.receive_qty || 0) + addQty;
-    const newBalance = Math.max(0, selectedItemForReceive.booking_qty - newReceiveTotal);
+    const currentRcv = selectedItemForReceive.rcv_qty ?? selectedItemForReceive.receive_qty ?? 0;
+    const bookingQty = selectedItemForReceive.booking_qty ?? 0;
+    const newRcvTotal = currentRcv + addQty;
+    const newDueQty = Math.max(0, bookingQty - newRcvTotal);
+
+    // Format entry string e.g. "22/07/=186,"
+    const dateObj = new Date(receiveDateInput);
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const rcvFormattedEntry = `${dd}/${mm}/=${addQty},`;
+
+    const existingRcvdDateStr = selectedItemForReceive.rcvd_date || selectedItemForReceive.receive_date || '';
+    const updatedRcvdDateStr = existingRcvdDateStr ? `${existingRcvdDateStr} ${rcvFormattedEntry}` : rcvFormattedEntry;
 
     const newLog: TransactionLog = {
       id: `rcv_${Date.now()}`,
@@ -141,16 +215,20 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
       date: receiveDateInput,
       challan: receiveChallanInput || 'CH-' + Math.floor(1000 + Math.random() * 9000),
       qty: addQty,
-      remarks: remarksInput || 'Daily Drawstring Receive Update',
+      remarks: remarksInput || 'Daily Receive Update',
       created_at: new Date().toISOString()
     };
 
     const updated: DrawstringItem = {
       ...selectedItemForReceive,
-      receive_qty: newReceiveTotal,
+      rcv_qty: newRcvTotal,
+      receive_qty: newRcvTotal,
+      due_qty: newDueQty,
+      balance_qty: newDueQty,
+      last_rcvd_qty: addQty,
+      rcvd_date: updatedRcvdDateStr,
       receive_date: receiveDateInput,
       receive_challan: receiveChallanInput || selectedItemForReceive.receive_challan,
-      balance_qty: newBalance,
       remarks: remarksInput ? `${selectedItemForReceive.remarks ? selectedItemForReceive.remarks + ' | ' : ''}${remarksInput}` : selectedItemForReceive.remarks,
       receive_logs: [...(selectedItemForReceive.receive_logs || []), newLog]
     };
@@ -164,83 +242,80 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
     setRemarksInput('');
   };
 
-  // Submit New Booking
-  const handleAddNewSubmit = (e: React.FormEvent) => {
+  // Save Full Edit Row
+  const handleFullEditSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemData.buyer_name || !newItemData.style || !newItemData.store_ref) {
-      alert('Please fill in Buyer Name, Style, and MCD Ref');
-      return;
-    }
+    if (!editingItem) return;
 
-    const bookingQty = Number(newItemData.booking_qty) || 0;
-    const itemToAdd: DrawstringItem = {
-      id: Date.now(),
-      ...newItemData,
-      booking_qty: bookingQty,
-      receive_qty: 0,
-      issue_qty: 0,
-      balance_qty: bookingQty,
-      receive_logs: [],
-      issue_logs: []
+    const bQty = Number(editingItem.booking_qty) || 0;
+    const rQty = Number(editingItem.rcv_qty ?? editingItem.receive_qty) || 0;
+    const dQty = Math.max(0, bQty - rQty);
+
+    const updated: DrawstringItem = {
+      ...editingItem,
+      booking_qty: bQty,
+      rcv_qty: rQty,
+      receive_qty: rQty,
+      due_qty: dQty,
+      balance_qty: dQty,
+      buyer_name: editingItem.buyer || editingItem.buyer_name,
+      style: editingItem.ref_no_job_no || editingItem.style,
+      order_no: editingItem.po_no || editingItem.order_no,
+      store_ref: editingItem.sr_gt_no || editingItem.store_ref,
+      colour: editingItem.color || editingItem.colour,
+      drawstring_type: editingItem.item_name || editingItem.drawstring_type,
+      size_mm: editingItem.size || editingItem.size_mm,
+      date: editingItem.booking_date || editingItem.date,
+      receive_date: editingItem.rcvd_date || editingItem.receive_date
     };
 
-    if (onAddItem) {
-      onAddItem(itemToAdd);
-    } else {
-      onUpdateItem(itemToAdd);
-    }
-
-    setIsAddModalOpen(false);
-    setNewItemData({
-      buyer_name: '',
-      date: new Date().toISOString().split('T')[0],
-      booking_challan: '',
-      style: '',
-      order_no: '',
-      store_ref: '',
-      colour: '',
-      drawstring_type: 'Round Drawstring',
-      size_mm: '6mm',
-      unit: 'YDS',
-      booking_qty: 0,
-      receive_qty: 0,
-      receive_date: '',
-      receive_challan: '',
-      issue_qty: 0,
-      issue_date: '',
-      issue_challan: '',
-      balance_qty: 0,
-      remarks: ''
-    });
+    onUpdateItem(updated);
+    setEditingItem(null);
   };
 
-  // Export to CSV/Excel
+  // Export CSV matching exact Supabase column layout
   const handleExportCSV = () => {
     if (filteredItems.length === 0) return;
 
-    const headers = ['MCD Ref', 'Date', 'Buyer', 'Style', 'Order No', 'Challan', 'Drawstring Type', 'Size', 'Colour', 'Booking Qty', 'Receive Qty', 'Receive Date', 'Receive Challan', 'Balance Qty', 'Unit', 'Status'];
-    const rows = filteredItems.map(item => {
-      let status = 'FULFILLED';
-      if (item.receive_qty === 0) status = 'PENDING';
-      else if (item.receive_qty < item.booking_qty) status = 'PARTIAL';
+    const headers = [
+      'buyer', 'sl_no', 'booking_date', 'ref_no_job_no', 'sr_gt_no', 
+      'po_no', 'item_name', 'color', 'size', 'booking_qty', 
+      'rcv_qty', 'due_qty', 'last_rcvd_qty', 'rcvd_date', 'remarks'
+    ];
+
+    const rows = filteredItems.map((item, index) => {
+      const bName = item.buyer || item.buyer_name || '';
+      const slNo = item.sl_no || item.id || index + 1;
+      const bDate = item.booking_date || item.date || '';
+      const refJob = item.ref_no_job_no || item.style || '';
+      const srGt = item.sr_gt_no || item.store_ref || '';
+      const poNo = item.po_no || item.order_no || '';
+      const iName = item.item_name || item.drawstring_type || '';
+      const col = item.color || item.colour || '';
+      const sizeVal = item.size || item.size_mm || '';
+      const bQty = item.booking_qty ?? 0;
+      const rQty = item.rcv_qty ?? item.receive_qty ?? 0;
+      const dQty = item.due_qty ?? item.balance_qty ?? Math.max(0, bQty - rQty);
+      const lastRcvd = item.last_rcvd_qty ?? 0;
+      const rcvdDateStr = item.rcvd_date || item.receive_date || '';
+      const rem = item.remarks || '';
 
       return [
-        `"${item.store_ref}"`,
-        `"${item.date}"`,
-        `"${item.buyer_name}"`,
-        `"${item.style}"`,
-        `"${item.order_no}"`,
-        `"${item.booking_challan}"`,
-        `"${item.drawstring_type}"`,
-        `"${item.size_mm || ''}"`,
-        `"${item.colour}"`,
-        item.booking_qty,
-        item.receive_qty,
-        `"${item.receive_date || ''}"`,
-        `"${item.receive_challan || ''}"`,
-        item.balance_qty,
-        `"${item.unit}"`,
-        `"${status}"`
+        `"${bName}"`,
+        `"${slNo}"`,
+        `"${bDate}"`,
+        `"${refJob}"`,
+        `"${srGt}"`,
+        `"${poNo}"`,
+        `"${iName}"`,
+        `"${col}"`,
+        `"${sizeVal}"`,
+        bQty,
+        rQty,
+        dQty,
+        lastRcvd,
+        `"${rcvdDateStr}"`,
+        `"${rem}"`
       ].join(',');
     });
 
@@ -248,7 +323,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Daily_Drawstring_Received_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Drawstring_Supabase_Format_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -270,13 +345,13 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight">Daily Drawstring Received Update</h1>
+                <h1 className="text-xl font-black tracking-tight">Drawstring Received & Booking (Supabase Schema)</h1>
                 <span className="px-2.5 py-0.5 bg-teal-500/30 border border-teal-400/40 text-teal-200 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                  MCD Live
+                  Live Supabase Sync
                 </span>
               </div>
               <p className="text-xs text-teal-200/80 mt-1">
-                Log daily received drawstring quantities, track delivery challans, and maintain real-time store balances.
+                Displaying exact 15 columns format matching Supabase: <code className="font-mono text-teal-300 bg-teal-950/60 px-1 rounded">buyer, sl_no, booking_date, ref_no_job_no, sr_gt_no, po_no, item_name, color, size, booking_qty, rcv_qty, due_qty, last_rcvd_qty, rcvd_date, remarks</code>
               </p>
             </div>
           </div>
@@ -298,7 +373,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                 className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-teal-500/20 flex items-center gap-1.5 transition-all"
               >
                 <Plus className="w-4 h-4" />
-                <span>New Drawstring Entry</span>
+                <span>New Drawstring Booking</span>
               </button>
             )}
           </div>
@@ -316,7 +391,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search Buyer, Style, MCD Ref, Colour, Drawstring Type..."
+              placeholder="Search Buyer, Ref/Job, SR/GT, PO, Item Name, Color..."
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               className={`w-full pl-9 pr-3 py-2 text-xs font-medium rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500 ${
@@ -351,9 +426,9 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
               }`}
             >
               <option value="ALL">All Statuses</option>
-              <option value="PENDING">🟨 Pending (0% Recv)</option>
+              <option value="PENDING">🟨 Pending (0% Recv - Yellow)</option>
               <option value="PARTIAL">🟦 Partial (In Progress)</option>
-              <option value="FULFILLED">🟩 Fulfilled (100% Recv)</option>
+              <option value="FULFILLED">🟩 Fulfilled (Completed)</option>
             </select>
           </div>
 
@@ -372,124 +447,386 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
         </div>
       </div>
 
-      {/* Main Table */}
+      {/* Main Table displaying EXACT Supabase Columns in Order */}
       <div className={`rounded-2xl border overflow-hidden shadow-xl ${
-        isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+        isLight ? 'bg-white border-slate-300' : 'bg-slate-900 border-slate-800'
       }`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
-            <thead>
-              <tr className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-950 text-slate-300 border-slate-800'
+        <div className="overflow-auto max-h-[75vh]">
+          <table className={`w-full text-left border-collapse min-w-[1600px] border ${
+            isLight ? 'border-slate-300' : 'border-slate-700'
+          }`}>
+            <thead className="sticky top-0 z-30 shadow-sm">
+              
+              {/* Header Titles Row - 15 Supabase Columns */}
+              <tr className={`text-[11px] font-black uppercase tracking-wider ${
+                isLight ? 'bg-slate-900 text-slate-100' : 'bg-slate-950 text-slate-200'
               }`}>
-                <th className="py-3.5 px-3">MCD Ref</th>
-                <th className="py-3.5 px-3">Date</th>
-                <th className="py-3.5 px-3">Buyer</th>
-                <th className="py-3.5 px-3">Style / Order</th>
-                <th className="py-3.5 px-3">Type & Size</th>
-                <th className="py-3.5 px-3">Colour</th>
-                <th className="py-3.5 px-3 text-right">Booking Qty</th>
-                <th className="py-3.5 px-3 text-right">Recv Qty</th>
-                <th className="py-3.5 px-3 text-center">Recv Date</th>
-                <th className="py-3.5 px-3 text-center">Recv Challan</th>
-                <th className="py-3.5 px-3 text-right">Balance</th>
-                <th className="py-3.5 px-3 text-center">Actions</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[120px]">buyer</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[60px] text-center">sl_no</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[95px]">booking_date</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[150px]">ref_no_job_no</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[120px]">sr_gt_no</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[100px]">po_no</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[110px]">item_name</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[120px]">color</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[80px]">size</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[100px] text-right bg-amber-950/40 text-amber-200">booking_qty</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[95px] text-right bg-emerald-950/40 text-emerald-200">rcv_qty</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[95px] text-right bg-rose-950/40 text-rose-200">due_qty</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[100px] text-right">last_rcvd_qty</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[160px]">rcvd_date</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[120px]">remarks</th>
+                <th className="py-2.5 px-2 border border-slate-700 min-w-[120px] text-center">Action</th>
               </tr>
+
+              {/* Frozen Column Filter Row - Instant Typing Filters for all 15 columns */}
+              <tr className={`${isLight ? 'bg-slate-100' : 'bg-slate-900'}`}>
+                {/* 1. buyer */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.buyer}
+                    onChange={(e) => handleColFilterChange('buyer', e.target.value)}
+                    placeholder="🔍 buyer..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-bold focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 2. sl_no */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.sl_no}
+                    onChange={(e) => handleColFilterChange('sl_no', e.target.value)}
+                    placeholder="🔍 sl..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono text-center focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 3. booking_date */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.booking_date}
+                    onChange={(e) => handleColFilterChange('booking_date', e.target.value)}
+                    placeholder="🔍 date..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 4. ref_no_job_no */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.ref_no_job_no}
+                    onChange={(e) => handleColFilterChange('ref_no_job_no', e.target.value)}
+                    placeholder="🔍 ref/job..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 5. sr_gt_no */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.sr_gt_no}
+                    onChange={(e) => handleColFilterChange('sr_gt_no', e.target.value)}
+                    placeholder="🔍 sr/gt..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 6. po_no */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.po_no}
+                    onChange={(e) => handleColFilterChange('po_no', e.target.value)}
+                    placeholder="🔍 po..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 7. item_name */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.item_name}
+                    onChange={(e) => handleColFilterChange('item_name', e.target.value)}
+                    placeholder="🔍 item..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 8. color */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.color}
+                    onChange={(e) => handleColFilterChange('color', e.target.value)}
+                    placeholder="🔍 color..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-bold focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 9. size */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.size}
+                    onChange={(e) => handleColFilterChange('size', e.target.value)}
+                    placeholder="🔍 size..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 10. booking_qty */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.booking_qty}
+                    onChange={(e) => handleColFilterChange('booking_qty', e.target.value)}
+                    placeholder="🔍 book..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono text-right focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 11. rcv_qty */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.rcv_qty}
+                    onChange={(e) => handleColFilterChange('rcv_qty', e.target.value)}
+                    placeholder="🔍 rcv..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono text-right focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 12. due_qty */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.due_qty}
+                    onChange={(e) => handleColFilterChange('due_qty', e.target.value)}
+                    placeholder="🔍 due..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono text-right focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 13. last_rcvd_qty */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.last_rcvd_qty}
+                    onChange={(e) => handleColFilterChange('last_rcvd_qty', e.target.value)}
+                    placeholder="🔍 last..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border font-mono text-right focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 14. rcvd_date */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.rcvd_date}
+                    onChange={(e) => handleColFilterChange('rcvd_date', e.target.value)}
+                    placeholder="🔍 rcvd date..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* 15. remarks */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700">
+                  <input
+                    type="text"
+                    value={colFilters.remarks}
+                    onChange={(e) => handleColFilterChange('remarks', e.target.value)}
+                    placeholder="🔍 remarks..."
+                    className={`w-full px-1.5 py-1 text-[10px] rounded border focus:outline-none focus:ring-1 focus:ring-teal-500 ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'
+                    }`}
+                  />
+                </th>
+
+                {/* Clear Button */}
+                <th className="p-1 border border-slate-300 dark:border-slate-700 text-center">
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="px-2 py-1 text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white rounded transition-all w-full"
+                    title="Clear column filters"
+                  >
+                    Clear
+                  </button>
+                </th>
+              </tr>
+
             </thead>
-            <tbody className="divide-y divide-slate-200/50 dark:divide-slate-800/50 text-xs font-semibold">
+            <tbody className="text-xs font-semibold">
               {isLoading ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-slate-400 font-bold">
+                  <td colSpan={16} className="py-12 text-center text-slate-400 font-bold border border-slate-300 dark:border-slate-700">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-500" />
-                    <span>Loading Drawstring Inventory...</span>
+                    <span>Fetching Drawstring Records from Supabase...</span>
                   </td>
                 </tr>
               ) : paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-slate-400 font-bold">
-                    No drawstring received records found. Click "New Drawstring Entry" to create one.
+                  <td colSpan={16} className="py-12 text-center text-slate-400 font-bold border border-slate-300 dark:border-slate-700">
+                    No matching drawstring items found.
                   </td>
                 </tr>
               ) : (
-                paginatedItems.map((item) => {
-                  const rowStyle = getItemRowStyle(item.booking_qty, item.receive_qty);
+                paginatedItems.map((item, idx) => {
+                  const bName = item.buyer || item.buyer_name || '-';
+                  const slNo = item.sl_no || item.id || idx + 1;
+                  const bDate = item.booking_date || item.date || '-';
+                  const refJob = item.ref_no_job_no || item.style || '-';
+                  const srGt = item.sr_gt_no || item.store_ref || '-';
+                  const poNo = item.po_no || item.order_no || '-';
+                  const iName = item.item_name || item.drawstring_type || 'DRAWSTRING';
+                  const col = item.color || item.colour || '-';
+                  const sizeVal = item.size || item.size_mm || '-';
+                  const bQty = item.booking_qty ?? 0;
+                  const rQty = item.rcv_qty ?? item.receive_qty ?? 0;
+                  const dQty = item.due_qty ?? item.balance_qty ?? Math.max(0, bQty - rQty);
+                  const lastRcvd = item.last_rcvd_qty ?? 0;
+                  const rcvdDateStr = item.rcvd_date || item.receive_date || '';
+                  const rem = item.remarks || '';
+
+                  // Sewing Thread highlighting logic:
+                  // Pending (rcv_qty === 0 && booking_qty > 0) -> Yellow background on Color and Booking Qty
+                  const isPending = rQty === 0 && bQty > 0;
+                  const isFulfilled = rQty >= bQty && bQty > 0;
 
                   return (
                     <tr 
                       key={item.id} 
-                      className={`transition-colors ${rowStyle.rowBg}`}
+                      className={`hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors ${
+                        isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-slate-100'
+                      }`}
                     >
-                      {/* MCD Ref */}
-                      <td className="py-3 px-3 font-mono font-bold text-teal-600 dark:text-teal-400">
-                        {item.store_ref}
+                      {/* 1. buyer */}
+                      <td className="py-2.5 px-2 font-extrabold text-slate-900 dark:text-white border border-slate-300 dark:border-slate-700">
+                        {bName}
                       </td>
 
-                      {/* Date */}
-                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
-                        {item.date}
+                      {/* 2. sl_no */}
+                      <td className="py-2.5 px-2 text-center font-mono text-[11px] text-slate-500 border border-slate-300 dark:border-slate-700">
+                        {slNo}
                       </td>
 
-                      {/* Buyer */}
-                      <td className="py-3 px-3 font-extrabold text-slate-900 dark:text-white">
-                        {item.buyer_name}
+                      {/* 3. booking_date */}
+                      <td className="py-2.5 px-2 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
+                        {bDate}
                       </td>
 
-                      {/* Style & Order */}
-                      <td className="py-3 px-3">
-                        <div className="font-extrabold text-slate-900 dark:text-slate-100">{item.style}</div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">{item.order_no}</div>
+                      {/* 4. ref_no_job_no */}
+                      <td className="py-2.5 px-2 font-bold text-teal-700 dark:text-teal-400 border border-slate-300 dark:border-slate-700">
+                        {refJob}
                       </td>
 
-                      {/* Drawstring Type & Size */}
-                      <td className="py-3 px-3">
-                        <span className="font-bold text-indigo-600 dark:text-indigo-400">{item.drawstring_type}</span>
-                        {item.size_mm && (
-                          <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-mono bg-indigo-500/10 text-indigo-500 rounded border border-indigo-500/20">
-                            {item.size_mm}
+                      {/* 5. sr_gt_no */}
+                      <td className="py-2.5 px-2 font-mono text-[11px] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
+                        {srGt}
+                      </td>
+
+                      {/* 6. po_no */}
+                      <td className="py-2.5 px-2 font-mono text-[11px] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
+                        {poNo}
+                      </td>
+
+                      {/* 7. item_name */}
+                      <td className="py-2.5 px-2 font-semibold text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
+                        {iName}
+                      </td>
+
+                      {/* 8. color (Yellow highlight if pending) */}
+                      <td className="py-2.5 px-2 border border-slate-300 dark:border-slate-700">
+                        {isPending ? (
+                          <span className="inline-block px-2 py-0.5 rounded bg-yellow-200 text-yellow-950 font-black border border-yellow-400 shadow-2xs">
+                            {col}
+                          </span>
+                        ) : (
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {col}
                           </span>
                         )}
                       </td>
 
-                      {/* Colour */}
-                      <td className="py-3 px-3 font-medium">
-                        <span className={(item.receive_qty || 0) === 0 && item.booking_qty > 0 ? "inline-block px-2.5 py-0.5 rounded bg-amber-200 text-amber-950 font-black border border-amber-400 shadow-2xs" : "text-slate-900 dark:text-slate-100 font-bold"}>
-                          {item.colour}
-                        </span>
+                      {/* 9. size */}
+                      <td className="py-2.5 px-2 font-mono text-[11px] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
+                        {sizeVal}
                       </td>
 
-                      {/* Booking Qty */}
-                      <td className="py-3 px-3 text-right font-extrabold">
-                        <span className={(item.receive_qty || 0) === 0 && item.booking_qty > 0 ? "inline-block px-2.5 py-0.5 rounded bg-amber-200 text-amber-950 font-black border border-amber-400 shadow-2xs" : "text-slate-900 dark:text-white font-bold"}>
-                          {item.booking_qty.toLocaleString()} <span className="text-[10px] text-slate-400">{item.unit}</span>
-                        </span>
-                      </td>
-
-                      {/* Received Qty */}
-                      <td className="py-3 px-3 text-right font-black text-emerald-600 dark:text-emerald-400">
-                        {item.receive_qty.toLocaleString()} <span className="text-[10px] text-slate-400">{item.unit}</span>
-                      </td>
-
-                      {/* Receive Date */}
-                      <td className="py-3 px-3 text-center text-slate-600 dark:text-slate-300">
-                        {item.receive_date || '-'}
-                      </td>
-
-                      {/* Receive Challan */}
-                      <td className="py-3 px-3 text-center font-mono text-[11px]">
-                        {item.receive_challan ? (
-                          <span className="px-2 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-300 font-bold border border-teal-500/20">
-                            {item.receive_challan}
+                      {/* 10. booking_qty (Yellow highlight if pending) */}
+                      <td className="py-2.5 px-2 text-right border border-slate-300 dark:border-slate-700">
+                        {isPending ? (
+                          <span className="inline-block px-2 py-0.5 rounded bg-yellow-200 text-yellow-950 font-black border border-yellow-400 shadow-2xs">
+                            {bQty.toLocaleString()}
                           </span>
-                        ) : '-'}
+                        ) : (
+                          <span className="font-extrabold text-slate-900 dark:text-white">
+                            {bQty.toLocaleString()}
+                          </span>
+                        )}
                       </td>
 
-                      {/* Balance */}
-                      <td className="py-3 px-3 text-right font-extrabold text-amber-600 dark:text-amber-400">
-                        {item.balance_qty.toLocaleString()} <span className="text-[10px] text-slate-400">{item.unit}</span>
+                      {/* 11. rcv_qty */}
+                      <td className="py-2.5 px-2 text-right font-black text-emerald-600 dark:text-emerald-400 border border-slate-300 dark:border-slate-700">
+                        {rQty.toLocaleString()}
                       </td>
 
-                      {/* Action Buttons */}
-                      <td className="py-3 px-3 text-center">
+                      {/* 12. due_qty */}
+                      <td className="py-2.5 px-2 text-right font-black text-rose-600 dark:text-rose-400 border border-slate-300 dark:border-slate-700">
+                        {dQty.toLocaleString()}
+                      </td>
+
+                      {/* 13. last_rcvd_qty */}
+                      <td className="py-2.5 px-2 text-right font-mono text-[11px] text-teal-600 dark:text-teal-400 border border-slate-300 dark:border-slate-700">
+                        {lastRcvd > 0 ? lastRcvd.toLocaleString() : '0'}
+                      </td>
+
+                      {/* 14. rcvd_date */}
+                      <td className="py-2.5 px-2 font-mono text-[10px] text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 max-w-[200px] truncate" title={rcvdDateStr}>
+                        {rcvdDateStr || '-'}
+                      </td>
+
+                      {/* 15. remarks */}
+                      <td className="py-2.5 px-2 text-[11px] text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700 max-w-[150px] truncate" title={rem}>
+                        {rem || '-'}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-2.5 px-2 text-center border border-slate-300 dark:border-slate-700">
                         <div className="flex items-center justify-center gap-1.5">
                           {isEditable ? (
                             <>
@@ -499,7 +836,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                                 className={`p-1 rounded-lg border transition-all ${
                                   isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
                                 }`}
-                                title="Full Edit Record"
+                                title="Edit Full Row"
                               >
                                 <Edit3 className="w-3.5 h-3.5 text-indigo-500" />
                               </button>
@@ -512,18 +849,18 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                                   setReceiveQtyInput('');
                                   setReceiveChallanInput('');
                                 }}
-                                className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-[11px] rounded-lg shadow-sm flex items-center gap-1 transition-all"
-                                title="Log Daily Receive Qty"
+                                className="px-2 py-1 bg-teal-600 hover:bg-teal-500 text-white font-black text-[10px] rounded-lg shadow-2xs flex items-center gap-1 transition-all"
+                                title="Log Received Quantity"
                               >
-                                <Zap className="w-3.5 h-3.5" />
-                                <span>Update</span>
+                                <Zap className="w-3 h-3" />
+                                <span>Receive</span>
                               </button>
 
                               {onDeleteItem && (
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (confirm(`Are you sure you want to delete drawstring item #${item.id} (${item.style})?`)) {
+                                    if (confirm(`Delete drawstring row #${item.id} (${bName})?`)) {
                                       onDeleteItem(item.id);
                                     }
                                   }}
@@ -537,7 +874,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                           ) : (
                             <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">
                               <Lock className="w-3 h-3 text-slate-500" />
-                              View Only
+                              View
                             </span>
                           )}
 
@@ -548,7 +885,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                               className={`p-1 rounded-lg border transition-all ${
                                 isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                               }`}
-                              title="View Receive History Logs"
+                              title="View History Logs"
                             >
                               <History className="w-3.5 h-3.5 text-indigo-500" />
                             </button>
@@ -602,7 +939,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
             <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <PackageCheck className="w-5 h-5 text-teal-500" />
-                <h3 className="font-extrabold text-base">Daily Drawstring Receive Log</h3>
+                <h3 className="font-extrabold text-base">Drawstring Receive Entry</h3>
               </div>
               <button 
                 onClick={() => setSelectedItemForReceive(null)}
@@ -617,27 +954,28 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
               isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
             }`}>
               <div className="flex justify-between font-mono text-teal-500 font-bold">
-                <span>MCD Ref: {selectedItemForReceive.store_ref}</span>
-                <span>{selectedItemForReceive.buyer_name}</span>
+                <span>Buyer: {selectedItemForReceive.buyer || selectedItemForReceive.buyer_name}</span>
+                <span>Ref: {selectedItemForReceive.ref_no_job_no || selectedItemForReceive.style}</span>
               </div>
-              <div className="font-bold text-slate-900 dark:text-white">Style: {selectedItemForReceive.style}</div>
-              <div className="text-slate-500">Type: {selectedItemForReceive.drawstring_type} ({selectedItemForReceive.colour})</div>
+              <div className="font-bold text-slate-900 dark:text-white">
+                Item: {selectedItemForReceive.item_name || selectedItemForReceive.drawstring_type} | Color: {selectedItemForReceive.color || selectedItemForReceive.colour} | Size: {selectedItemForReceive.size || selectedItemForReceive.size_mm}
+              </div>
               <div className="flex justify-between pt-1 border-t text-[11px] font-extrabold dark:border-slate-800">
-                <span>Booking Qty: {selectedItemForReceive.booking_qty.toLocaleString()} {selectedItemForReceive.unit}</span>
-                <span className="text-emerald-500">Already Received: {selectedItemForReceive.receive_qty.toLocaleString()} {selectedItemForReceive.unit}</span>
+                <span>Booking Qty: {(selectedItemForReceive.booking_qty || 0).toLocaleString()}</span>
+                <span className="text-emerald-500">Already Received: {(selectedItemForReceive.rcv_qty ?? selectedItemForReceive.receive_qty ?? 0).toLocaleString()}</span>
               </div>
             </div>
 
             {/* Receive Form */}
             <form onSubmit={handleReceiveSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs font-bold mb-1">Today's Received Quantity ({selectedItemForReceive.unit}) *</label>
+                <label className="block text-xs font-bold mb-1">Today's Received Quantity *</label>
                 <input
                   type="number"
                   step="any"
                   required
                   autoFocus
-                  placeholder="e.g. 500"
+                  placeholder="e.g. 186"
                   value={receiveQtyInput}
                   onChange={(e) => setReceiveQtyInput(e.target.value)}
                   className={`w-full p-2.5 text-sm font-black rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500 ${
@@ -661,7 +999,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1">Delivery Challan No</label>
+                  <label className="block text-xs font-bold mb-1">Challan / Note</label>
                   <input
                     type="text"
                     placeholder="e.g. CH-9082"
@@ -675,10 +1013,10 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
               </div>
 
               <div>
-                <label className="block text-xs font-bold mb-1">Remarks / Note</label>
+                <label className="block text-xs font-bold mb-1">Remarks</label>
                 <input
                   type="text"
-                  placeholder="e.g. Good quality, 1st lot received"
+                  placeholder="e.g. 1st lot delivered"
                   value={remarksInput}
                   onChange={(e) => setRemarksInput(e.target.value)}
                   className={`w-full p-2 text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-teal-500 ${
@@ -687,20 +1025,20 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                 />
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedItemForReceive(null)}
-                  className="w-1/2 py-2.5 rounded-xl border font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-teal-600/30 flex items-center justify-center gap-1.5"
+                  className="px-5 py-2 text-xs font-black text-white bg-teal-600 hover:bg-teal-500 rounded-xl shadow-md flex items-center gap-1.5"
                 >
-                  <Check className="w-4 h-4" />
-                  <span>Save Received Log</span>
+                  <Save className="w-4 h-4" />
+                  <span>Update Received Qty</span>
                 </button>
               </div>
             </form>
@@ -708,185 +1046,180 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
         </div>
       )}
 
-      {/* ADD NEW DRAWSTRING ENTRY MODAL */}
-      {isAddModalOpen && (
+      {/* EDIT ROW MODAL */}
+      {editingItem && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className={`w-full max-w-xl p-6 rounded-2xl border shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto ${
+          <div className={`w-full max-w-2xl p-6 rounded-2xl border shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto ${
             isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
           }`}>
             <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <Plus className="w-5 h-5 text-teal-500" />
-                <h3 className="font-extrabold text-base">New Drawstring Booking Entry</h3>
-              </div>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-200">
+              <h3 className="font-black text-base flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-indigo-500" />
+                Edit Drawstring Record (#{editingItem.id})
+              </h3>
+              <button onClick={() => setEditingItem(null)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddNewSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold mb-1">MCD Ref *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. DS-101"
-                    value={newItemData.store_ref}
-                    onChange={(e) => setNewItemData({...newItemData, store_ref: e.target.value})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-1">Buyer Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. HM / ZARA"
-                    value={newItemData.buyer_name}
-                    onChange={(e) => setNewItemData({...newItemData, buyer_name: e.target.value})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
+            <form onSubmit={handleFullEditSave} className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="block font-bold mb-1">buyer</label>
+                <input
+                  type="text"
+                  value={editingItem.buyer || editingItem.buyer_name || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, buyer: e.target.value, buyer_name: e.target.value })}
+                  className="w-full p-2 rounded-lg border font-bold border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold mb-1">Style *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ST-2081"
-                    value={newItemData.style}
-                    onChange={(e) => setNewItemData({...newItemData, style: e.target.value})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-1">Order No</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. PO-4481"
-                    value={newItemData.order_no}
-                    onChange={(e) => setNewItemData({...newItemData, order_no: e.target.value})}
-                    className={`w-full p-2 text-xs rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
+              <div>
+                <label className="block font-bold mb-1">sl_no</label>
+                <input
+                  type="text"
+                  value={editingItem.sl_no || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, sl_no: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold mb-1">Drawstring Type</label>
-                  <select
-                    value={newItemData.drawstring_type}
-                    onChange={(e) => setNewItemData({...newItemData, drawstring_type: e.target.value})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  >
-                    <option value="Round Drawstring">Round Drawstring</option>
-                    <option value="Flat Drawstring">Flat Drawstring</option>
-                    <option value="Braided Drawstring">Braided Drawstring</option>
-                    <option value="Elastic Drawstring">Elastic Drawstring</option>
-                    <option value="Cotton Drawstring">Cotton Drawstring</option>
-                    <option value="Polyester Drawstring">Polyester Drawstring</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-1">Size (mm/inch)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 6mm"
-                    value={newItemData.size_mm}
-                    onChange={(e) => setNewItemData({...newItemData, size_mm: e.target.value})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-1">Colour</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Black / Navy"
-                    value={newItemData.colour}
-                    onChange={(e) => setNewItemData({...newItemData, colour: e.target.value})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
+              <div>
+                <label className="block font-bold mb-1">booking_date</label>
+                <input
+                  type="text"
+                  value={editingItem.booking_date || editingItem.date || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, booking_date: e.target.value, date: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold mb-1">Booking Qty *</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="0"
-                    value={newItemData.booking_qty || ''}
-                    onChange={(e) => setNewItemData({...newItemData, booking_qty: Number(e.target.value)})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-1">Unit</label>
-                  <select
-                    value={newItemData.unit}
-                    onChange={(e) => setNewItemData({...newItemData, unit: e.target.value as any})}
-                    className={`w-full p-2 text-xs font-bold rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  >
-                    <option value="YDS">YDS</option>
-                    <option value="PCS">PCS</option>
-                    <option value="MTRS">MTRS</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold mb-1">Booking Challan</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. BK-209"
-                    value={newItemData.booking_challan}
-                    onChange={(e) => setNewItemData({...newItemData, booking_challan: e.target.value})}
-                    className={`w-full p-2 text-xs rounded-xl border ${
-                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800 border-slate-700'
-                    }`}
-                  />
-                </div>
+              <div>
+                <label className="block font-bold mb-1">ref_no_job_no</label>
+                <input
+                  type="text"
+                  value={editingItem.ref_no_job_no || editingItem.style || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, ref_no_job_no: e.target.value, style: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
               </div>
 
-              <div className="flex gap-2 pt-3">
+              <div>
+                <label className="block font-bold mb-1">sr_gt_no</label>
+                <input
+                  type="text"
+                  value={editingItem.sr_gt_no || editingItem.store_ref || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, sr_gt_no: e.target.value, store_ref: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">po_no</label>
+                <input
+                  type="text"
+                  value={editingItem.po_no || editingItem.order_no || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, po_no: e.target.value, order_no: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">item_name</label>
+                <input
+                  type="text"
+                  value={editingItem.item_name || editingItem.drawstring_type || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, item_name: e.target.value, drawstring_type: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">color</label>
+                <input
+                  type="text"
+                  value={editingItem.color || editingItem.colour || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, color: e.target.value, colour: e.target.value })}
+                  className="w-full p-2 rounded-lg border font-bold border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">size</label>
+                <input
+                  type="text"
+                  value={editingItem.size || editingItem.size_mm || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, size: e.target.value, size_mm: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">booking_qty</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingItem.booking_qty}
+                  onChange={(e) => setEditingItem({ ...editingItem, booking_qty: parseFloat(e.target.value) || 0 })}
+                  className="w-full p-2 rounded-lg border font-black border-slate-300 dark:border-slate-700 bg-yellow-50 text-yellow-950"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">rcv_qty</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingItem.rcv_qty ?? editingItem.receive_qty}
+                  onChange={(e) => setEditingItem({ ...editingItem, rcv_qty: parseFloat(e.target.value) || 0, receive_qty: parseFloat(e.target.value) || 0 })}
+                  className="w-full p-2 rounded-lg border font-black border-slate-300 dark:border-slate-700 bg-emerald-50 text-emerald-950"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">last_rcvd_qty</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editingItem.last_rcvd_qty || 0}
+                  onChange={(e) => setEditingItem({ ...editingItem, last_rcvd_qty: parseFloat(e.target.value) || 0 })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="block font-bold mb-1">rcvd_date (breakdown string e.g. "22/07/=186,")</label>
+                <input
+                  type="text"
+                  value={editingItem.rcvd_date || editingItem.receive_date || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, rcvd_date: e.target.value, receive_date: e.target.value })}
+                  className="w-full p-2 rounded-lg border font-mono border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="block font-bold mb-1">remarks</label>
+                <input
+                  type="text"
+                  value={editingItem.remarks || ''}
+                  onChange={(e) => setEditingItem({ ...editingItem, remarks: e.target.value })}
+                  className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="col-span-2 pt-3 flex justify-end gap-2 border-t dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="w-1/2 py-2.5 rounded-xl border font-bold text-xs"
+                  onClick={() => setEditingItem(null)}
+                  className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-teal-600/30"
+                  className="px-5 py-2 font-black text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md flex items-center gap-1.5"
                 >
-                  Create Booking Entry
+                  <Save className="w-4 h-4" />
+                  <span>Save Record</span>
                 </button>
               </div>
             </form>
@@ -894,7 +1227,21 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
         </div>
       )}
 
-      {/* HISTORY LOGS MODAL */}
+      {/* NEW DRAWSTRING BOOKING MODAL */}
+      {isAddModalOpen && (
+        <DrawstringNewBookingModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onAddBooking={async (newItemData) => {
+            if (onAddItem) {
+              await onAddItem(newItemData);
+            }
+          }}
+          existingBuyers={buyers.filter(b => b !== 'ALL')}
+        />
+      )}
+
+      {/* TRANSACTION HISTORY LOGS MODAL */}
       {historyItem && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
           <div className={`w-full max-w-lg p-6 rounded-2xl border shadow-2xl space-y-4 ${
@@ -903,231 +1250,45 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
             <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <History className="w-5 h-5 text-indigo-500" />
-                <h3 className="font-extrabold text-base">Receive History Logs - {historyItem.store_ref}</h3>
+                <h3 className="font-extrabold text-base">Receive History Logs</h3>
               </div>
               <button onClick={() => setHistoryItem(null)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {historyItem.receive_logs?.map((log) => (
-                <div key={log.id} className={`p-3 rounded-xl border text-xs flex justify-between items-center ${
-                  isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
-                }`}>
-                  <div>
-                    <div className="font-extrabold text-emerald-500">+{log.qty.toLocaleString()} {historyItem.unit}</div>
-                    <div className="text-[10px] text-slate-400">Date: {log.date} | Challan: {log.challan}</div>
-                    {log.remarks && <div className="text-[10px] text-slate-500 mt-0.5">{log.remarks}</div>}
-                  </div>
-                  <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded border border-emerald-500/20">
-                    RECEIVE LOG
-                  </span>
-                </div>
-              ))}
+            <div className="text-xs space-y-1 font-bold text-teal-600 dark:text-teal-400">
+              <div>Buyer: {historyItem.buyer || historyItem.buyer_name}</div>
+              <div>Ref/Job: {historyItem.ref_no_job_no || historyItem.style} ({historyItem.color || historyItem.colour})</div>
             </div>
 
-            <button
-              onClick={() => setHistoryItem(null)}
-              className="w-full py-2 bg-slate-800 text-white font-bold text-xs rounded-xl"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {historyItem.receive_logs && historyItem.receive_logs.length > 0 ? (
+                historyItem.receive_logs.map((log) => (
+                  <div key={log.id} className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
+                    isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
+                  }`}>
+                    <div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400">+ {log.qty.toLocaleString()}</div>
+                      <div className="text-[10px] text-slate-500">{log.date} | Challan: {log.challan}</div>
+                      {log.remarks && <div className="text-[10px] italic text-slate-400">{log.remarks}</div>}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-slate-400 text-xs">No receive transaction history logged.</div>
+              )}
+            </div>
 
-      {/* EDIT DRAWSTRING ITEM MODAL */}
-      {editingItem && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className={`w-full max-w-xl p-6 rounded-2xl border shadow-2xl space-y-4 my-8 ${
-            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
-          }`}>
-            <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800 bg-teal-600 -mx-6 -mt-6 p-4 text-white rounded-t-2xl">
-              <div className="flex items-center gap-2">
-                <Edit3 className="w-5 h-5" />
-                <h3 className="font-extrabold text-sm">Edit Drawstring Item Record (#{editingItem.id})</h3>
-              </div>
-              <button onClick={() => setEditingItem(null)} className="hover:bg-white/20 p-1 rounded-lg">
-                <X className="w-5 h-5" />
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setHistoryItem(null)}
+                className="px-4 py-2 text-xs font-bold bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl"
+              >
+                Close
               </button>
             </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                onUpdateItem(editingItem);
-                setEditingItem(null);
-              }}
-              className="space-y-3 text-xs max-h-[75vh] overflow-y-auto pr-1"
-            >
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">MCD Ref Code</label>
-                  <input
-                    type="text"
-                    value={editingItem.store_ref || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, store_ref: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-bold font-mono text-teal-600 ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Buyer Name</label>
-                  <input
-                    type="text"
-                    value={editingItem.buyer_name || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, buyer_name: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Style Name</label>
-                  <input
-                    type="text"
-                    value={editingItem.style || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, style: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Order No</label>
-                  <input
-                    type="text"
-                    value={editingItem.order_no || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, order_no: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Drawstring Type</label>
-                  <input
-                    type="text"
-                    value={editingItem.drawstring_type || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, drawstring_type: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Size (mm)</label>
-                  <input
-                    type="text"
-                    value={editingItem.size_mm || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, size_mm: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Colour</label>
-                  <input
-                    type="text"
-                    value={editingItem.colour || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, colour: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Unit</label>
-                  <select
-                    value={editingItem.unit || 'YDS'}
-                    onChange={(e) => setEditingItem({ ...editingItem, unit: e.target.value as any })}
-                    className={`w-full p-2 border rounded-xl font-bold ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  >
-                    <option value="YDS">YDS</option>
-                    <option value="PCS">PCS</option>
-                    <option value="MTRS">MTRS</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Booking Qty</label>
-                  <input
-                    type="number"
-                    value={editingItem.booking_qty}
-                    onChange={(e) => {
-                      const bQty = Number(e.target.value) || 0;
-                      const rQty = editingItem.receive_qty || 0;
-                      const bal = Math.max(0, bQty - rQty);
-                      setEditingItem({ ...editingItem, booking_qty: bQty, balance_qty: bal });
-                    }}
-                    className={`w-full p-2 border rounded-xl font-bold font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Receive Qty</label>
-                  <input
-                    type="number"
-                    value={editingItem.receive_qty || 0}
-                    onChange={(e) => {
-                      const rQty = Number(e.target.value) || 0;
-                      const bQty = editingItem.booking_qty || 0;
-                      const bal = Math.max(0, bQty - rQty);
-                      setEditingItem({ ...editingItem, receive_qty: rQty, balance_qty: bal });
-                    }}
-                    className={`w-full p-2 border rounded-xl font-bold font-mono text-emerald-600 ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Receive Date</label>
-                  <input
-                    type="date"
-                    value={editingItem.receive_date || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, receive_date: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-400 mb-1">Receive Challan</label>
-                  <input
-                    type="text"
-                    value={editingItem.receive_challan || ''}
-                    onChange={(e) => setEditingItem({ ...editingItem, receive_challan: e.target.value })}
-                    className={`w-full p-2 border rounded-xl font-mono ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-400 mb-1">Remarks</label>
-                <textarea
-                  rows={2}
-                  value={editingItem.remarks || ''}
-                  onChange={(e) => setEditingItem({ ...editingItem, remarks: e.target.value })}
-                  className={`w-full p-2 border rounded-xl ${isLight ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
-                  placeholder="Notes..."
-                />
-              </div>
-
-              <div className="flex gap-2 pt-3 border-t dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditingItem(null)}
-                  className="w-1/2 py-2 border font-bold rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="w-1/2 py-2 bg-teal-600 hover:bg-teal-500 text-white font-extrabold rounded-xl shadow-md flex items-center justify-center gap-1.5"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save Updates</span>
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
