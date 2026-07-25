@@ -8,6 +8,8 @@ export interface UserProfile {
   sector: string;
   avatar_url?: string;
   role?: string;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  is_approved?: boolean;
   created_at?: string;
 }
 

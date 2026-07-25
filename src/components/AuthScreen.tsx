@@ -103,6 +103,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             u => u.username.toLowerCase() === inputUser && (u.password === inputPass || !u.password)
           );
           if (found) {
+            // Check Approval Status
+            if (found.status === 'PENDING' || (found.is_approved === false && found.status !== 'APPROVED' && found.role !== 'ADMINISTRATOR')) {
+              setErrorMessage('⚠️ Account Pending Admin Approval! Your registration has been received, but your account is waiting for Admin approval. Please request Admin (Md. Johurul Islam) to approve your account in the Admin Panel.\n(আপনার অ্যাকাউন্টটি এখনও অ্যাডমিন এপ্রুভ করেনি)');
+              setIsLoading(false);
+              return;
+            }
+            if (found.status === 'REJECTED') {
+              setErrorMessage('❌ Account Registration Rejected! Your account request was rejected by Admin.');
+              setIsLoading(false);
+              return;
+            }
             onLoginSuccess(found);
             return;
           }
@@ -115,7 +126,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('username', loginUsername.trim())
+        .eq('username', loginUsername.trim().toLowerCase())
         .maybeSingle();
 
       if (data) {
@@ -124,7 +135,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           setIsLoading(false);
           return;
         }
-        onLoginSuccess(data as UserProfile);
+        const profile = data as UserProfile;
+        if (profile.status === 'PENDING' || (profile.is_approved === false && profile.status !== 'APPROVED' && profile.role !== 'ADMINISTRATOR')) {
+          setErrorMessage('⚠️ Account Pending Admin Approval! Your registration has been received, but your account is waiting for Admin approval. Please request Admin (Md. Johurul Islam) to approve your account in the Admin Panel.\n(আপনার অ্যাকাউন্টটি এখনও অ্যাডমিন এপ্রুভ করেনি)');
+          setIsLoading(false);
+          return;
+        }
+        if (profile.status === 'REJECTED') {
+          setErrorMessage('❌ Account Registration Rejected! Your account request was rejected by Admin.');
+          setIsLoading(false);
+          return;
+        }
+        onLoginSuccess(profile);
         return;
       }
 
@@ -158,7 +180,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       designation: regDesignation.trim() || 'Store Operator',
       id_card_no: regIdCardNo.trim() || `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
       sector: regSector.trim() || 'GMS MCD Dept.',
-      role: regRole,
+      role: 'USER',
+      status: 'PENDING',
+      is_approved: false,
       created_at: new Date().toISOString()
     };
 
@@ -179,10 +203,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       customUsersList.unshift(newUser);
       localStorage.setItem('erp_custom_users', JSON.stringify(customUsersList));
 
-      setSuccessMessage('User registration successful! Logging in now...');
-      setTimeout(() => {
-        onLoginSuccess(newUser);
-      }, 800);
+      setSuccessMessage('✅ Registration submitted successfully! Your account is currently PENDING Admin Approval. Once Admin (Md. Johurul Islam) approves your account in the Admin Panel, you will be able to log in. (রেজিস্ট্রেশন জমা হয়েছে! অ্যাডমিন অনুমোদনের পর আপনি লগইন করতে পারবেন।)');
+      setRegFullName('');
+      setRegUsername('');
+      setRegPassword('');
+      setRegIdCardNo('');
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to create user account.');
     } finally {
@@ -461,19 +486,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-extrabold text-slate-700 mb-1">
-                Access Role / Permissions
-              </label>
-              <select
-                value={regRole}
-                onChange={(e) => setRegRole(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 focus:border-emerald-600 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
-              >
-                <option value="USER">Standard User (Read-Only & Download)</option>
-                <option value="SUB_ADMIN">Sub-Admin (Data Entry, Edit & Delete)</option>
-                <option value="ADMINISTRATOR">Administrator (Full Admin Control)</option>
-              </select>
+            <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 text-slate-800 font-extrabold">
+                <User className="w-4 h-4 text-emerald-600" />
+                <span>Account Role: <strong className="text-slate-900">Standard User (USER)</strong></span>
+              </div>
+              <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded border border-amber-300 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-amber-600" />
+                <span>Requires Admin Approval</span>
+              </span>
             </div>
 
             <button
