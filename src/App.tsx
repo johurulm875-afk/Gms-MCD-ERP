@@ -399,7 +399,51 @@ export default function App() {
     try {
       const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape');
       if (records && records.length > 0) {
-        setItems(records);
+        const mappedRecords: TwillTapeItem[] = records.map((r: any) => {
+          const bName = r.buyer_name || r.buyer || 'GMS Buyer';
+          const stRef = r.store_ref || r.twill_ref || r.s_tape_ref || r.tape_ref || `TW-${r.id}`;
+          const col = r.colour || r.color || '';
+          const sizeCm = r.cm || r.size || r.width || '';
+          const rDate = r.receive_date || r.rcvd_date || '';
+          const rChallan = r.receive_challan || r.rcvd_challan || '';
+          const iDate = r.issue_date || r.iss_date || '';
+          const iChallan = r.issue_challan || r.iss_challan || '';
+          const bQty = Number(r.booking_qty ?? r.booking_quantity ?? r.qty ?? 0);
+          const rQty = Number(r.receive_qty ?? r.rcvd_qty ?? 0);
+          const iQty = Number(r.issue_qty ?? r.iss_qty ?? 0);
+          const balQty = rQty > 0 ? Math.max(0, rQty - iQty) : (r.balance_qty !== undefined ? Number(r.balance_qty) : bQty);
+
+          return {
+            ...r,
+            id: Number(r.id),
+            buyer_name: bName,
+            buyer: bName,
+            date: r.date || '',
+            booking_challan: r.booking_challan || '',
+            style: r.style || '',
+            order_no: r.order_no || '',
+            store_ref: stRef,
+            twill_ref: stRef,
+            job_no: r.job_no || '',
+            colour: col,
+            color: col,
+            item_name: r.item_name || 'H.B. TAPE',
+            cm: sizeCm,
+            yds: r.yds || 'YDS',
+            booking_qty: bQty,
+            receive_qty: rQty,
+            receive_date: rDate,
+            receive_challan: rChallan,
+            issue_qty: iQty,
+            issue_date: iDate,
+            issue_challan: iChallan,
+            balance_qty: balQty,
+            remarks: r.remarks || '',
+            receive_logs: Array.isArray(r.receive_logs) ? r.receive_logs : [],
+            issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
+          };
+        });
+        setItems(mappedRecords);
         setIsConnected(true);
       } else {
         setIsConnected(true);
@@ -478,7 +522,41 @@ export default function App() {
 
   // Add Twill Tape Booking
   const handleAddBooking = async (newItemData: Omit<TwillTapeItem, 'id'> | Omit<TwillTapeItem, 'id'>[]) => {
-    const batch = Array.isArray(newItemData) ? newItemData : [newItemData];
+    const rawBatch = Array.isArray(newItemData) ? newItemData : [newItemData];
+    const batch = rawBatch.map(item => {
+      const bName = item.buyer_name || (item as any).buyer || 'General Buyer';
+      const stRef = item.store_ref || (item as any).twill_ref || (item as any).s_tape_ref || '';
+      const col = item.colour || (item as any).color || '';
+      const rDate = item.receive_date || (item as any).rcvd_date || '';
+      const rChallan = item.receive_challan || (item as any).rcvd_challan || '';
+      const iDate = item.issue_date || (item as any).iss_date || '';
+      const iChallan = item.issue_challan || (item as any).iss_challan || '';
+
+      return {
+        ...item,
+        buyer_name: bName,
+        date: item.date || '',
+        booking_challan: item.booking_challan || '',
+        style: item.style || '',
+        order_no: item.order_no || '',
+        store_ref: stRef,
+        job_no: item.job_no || '',
+        colour: col,
+        item_name: item.item_name || 'H.B. TAPE',
+        cm: item.cm || '',
+        yds: item.yds || 'YDS',
+        booking_qty: Number(item.booking_qty) || 0,
+        receive_qty: Number(item.receive_qty) || 0,
+        receive_date: rDate,
+        receive_challan: rChallan,
+        issue_qty: Number(item.issue_qty) || 0,
+        issue_date: iDate,
+        issue_challan: iChallan,
+        balance_qty: Number(item.balance_qty) || 0,
+        remarks: item.remarks || ''
+      };
+    });
+
     try {
       const { data, error } = await supabase
         .from('twill_tape')
@@ -486,6 +564,7 @@ export default function App() {
         .select();
 
       if (error) {
+        console.warn("Supabase insert notice:", error.message);
         const newLocalItems: TwillTapeItem[] = batch.map((item, idx) => ({
           ...item,
           id: Date.now() + idx
@@ -493,10 +572,10 @@ export default function App() {
         setItems(prev => [...newLocalItems, ...prev]);
         showToast(`Added ${batch.length} new booking(s) locally`, "info");
       } else if (data && data.length > 0) {
-        setItems(prev => [...(data as TwillTapeItem[]), ...prev]);
+        await fetchInventory();
         showToast(`Successfully added ${data.length} new booking(s)!`, "success");
       } else {
-        fetchInventory();
+        await fetchInventory();
       }
     } catch (err) {
       console.error("Failed to add booking:", err);
@@ -579,31 +658,43 @@ export default function App() {
   // Update Twill Tape Booking
   const handleUpdateBooking = async (updatedItem: TwillTapeItem) => {
     try {
+      const bName = updatedItem.buyer_name || (updatedItem as any).buyer || '';
+      const stRef = updatedItem.store_ref || (updatedItem as any).twill_ref || '';
+      const col = updatedItem.colour || (updatedItem as any).color || '';
+      const rDate = updatedItem.receive_date || (updatedItem as any).rcvd_date || '';
+      const rChallan = updatedItem.receive_challan || (updatedItem as any).rcvd_challan || '';
+      const iDate = updatedItem.issue_date || (updatedItem as any).iss_date || '';
+      const iChallan = updatedItem.issue_challan || (updatedItem as any).iss_challan || '';
+
       const { error } = await supabase
         .from('twill_tape')
         .update({
-          buyer_name: updatedItem.buyer_name,
-          date: updatedItem.date,
-          booking_challan: updatedItem.booking_challan,
-          style: updatedItem.style,
-          order_no: updatedItem.order_no,
-          store_ref: updatedItem.store_ref,
+          buyer_name: bName,
+          date: updatedItem.date || '',
+          booking_challan: updatedItem.booking_challan || '',
+          style: updatedItem.style || '',
+          order_no: updatedItem.order_no || '',
+          store_ref: stRef,
           job_no: updatedItem.job_no || '',
-          colour: updatedItem.colour,
-          item_name: updatedItem.item_name,
-          cm: updatedItem.cm,
-          yds: updatedItem.yds,
-          booking_qty: updatedItem.booking_qty,
-          receive_qty: updatedItem.receive_qty,
-          receive_date: updatedItem.receive_date,
-          receive_challan: updatedItem.receive_challan,
-          issue_qty: updatedItem.issue_qty,
-          issue_date: updatedItem.issue_date,
-          issue_challan: updatedItem.issue_challan,
-          balance_qty: updatedItem.balance_qty,
-          remarks: updatedItem.remarks
+          colour: col,
+          item_name: updatedItem.item_name || 'H.B. TAPE',
+          cm: updatedItem.cm || '',
+          yds: updatedItem.yds || 'YDS',
+          booking_qty: Number(updatedItem.booking_qty) || 0,
+          receive_qty: Number(updatedItem.receive_qty) || 0,
+          receive_date: rDate,
+          receive_challan: rChallan,
+          issue_qty: Number(updatedItem.issue_qty) || 0,
+          issue_date: iDate,
+          issue_challan: iChallan,
+          balance_qty: Number(updatedItem.balance_qty) || 0,
+          remarks: updatedItem.remarks || ''
         })
         .eq('id', updatedItem.id);
+
+      if (error) {
+        console.warn("Notice updating twill_tape:", error.message);
+      }
 
       setItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
       if (historyModalItem && historyModalItem.id === updatedItem.id) {
