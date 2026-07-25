@@ -112,6 +112,36 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
   }, [initialTheme]);
 
   // Filter items based on buyer selection, style, & search term
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(true);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  // Excel-style column filters for the workspace table
+  const [colFilters, setColFilters] = useState({
+    buyer_ref_job: '',
+    style_colour: '',
+    booking_qty: '',
+    receive_qty: '',
+    issue_qty: '',
+    balance_qty: '',
+    remarks: ''
+  });
+
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
+  const clearAllColFilters = () => {
+    setColFilters({
+      buyer_ref_job: '',
+      style_colour: '',
+      booking_qty: '',
+      receive_qty: '',
+      issue_qty: '',
+      balance_qty: '',
+      remarks: ''
+    });
+  };
+
+  const hasActiveColFilters = Object.values(colFilters).some(val => val.trim().length > 0);
+
   useEffect(() => {
     let filtered = [...allItems];
 
@@ -135,37 +165,229 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
       );
     }
 
+    // Apply Excel-style Column Filters
+    if (colFilters.buyer_ref_job) {
+      const q = colFilters.buyer_ref_job.toLowerCase();
+      filtered = filtered.filter(i =>
+        i.buyer_name.toLowerCase().includes(q) ||
+        i.store_ref.toLowerCase().includes(q) ||
+        (i.job_no && i.job_no.toLowerCase().includes(q))
+      );
+    }
+    if (colFilters.style_colour) {
+      const q = colFilters.style_colour.toLowerCase();
+      filtered = filtered.filter(i =>
+        i.style.toLowerCase().includes(q) ||
+        i.colour.toLowerCase().includes(q) ||
+        (i.item_name && i.item_name.toLowerCase().includes(q))
+      );
+    }
+    if (colFilters.booking_qty) {
+      filtered = filtered.filter(i => String(i.booking_qty).includes(colFilters.booking_qty));
+    }
+    if (colFilters.receive_qty) {
+      filtered = filtered.filter(i => String(i.receive_qty || 0).includes(colFilters.receive_qty));
+    }
+    if (colFilters.issue_qty) {
+      filtered = filtered.filter(i => String(i.issue_qty || 0).includes(colFilters.issue_qty));
+    }
+    if (colFilters.balance_qty) {
+      filtered = filtered.filter(i => String(i.balance_qty || 0).includes(colFilters.balance_qty));
+    }
+    if (colFilters.remarks) {
+      const q = colFilters.remarks.toLowerCase();
+      filtered = filtered.filter(i => (i.remarks || '').toLowerCase().includes(q));
+    }
+
     setMatchingItems(filtered);
 
-    // Initialize row states with CLEAN EMPTY INPUT BOXES by default
-    const initialRowStates: Record<number, ItemRowState> = {};
-    filtered.forEach(item => {
-      const prevRecv = item.receive_qty || 0;
-      const prevIss = item.issue_qty || 0;
-      initialRowStates[item.id] = {
-        id: item.id,
-        prev_receive_qty: prevRecv,
-        today_receive_qty: '',
-        receive_qty: prevRecv,
-        receive_date: '', // KEEP BOX EMPTY
-        receive_challan: '', // KEEP BOX EMPTY
-        receive_batch_no: '', // KEEP BOX EMPTY
-        receive_sub_batches: [],
+    // Merge/Initialize row states preserving any active unsaved user inputs
+    setRowStates(prev => {
+      const nextStates: Record<number, ItemRowState> = { ...prev };
+      filtered.forEach(item => {
+        const prevRecv = item.receive_qty || 0;
+        const prevIss = item.issue_qty || 0;
 
-        prev_issue_qty: prevIss,
-        today_issue_qty: '',
-        issue_qty: prevIss,
-        issue_date: '', // KEEP BOX EMPTY
-        issue_challan: '', // KEEP BOX EMPTY
-        issue_batch_no: '', // KEEP BOX EMPTY
-        issue_sub_batches: [],
+        if (nextStates[item.id]) {
+          // Keep existing row state if present so unsaved edits aren't wiped out when searching another challan/ref
+          const current = nextStates[item.id];
+          const addedR = typeof current.today_receive_qty === 'number' ? current.today_receive_qty : 0;
+          const addedI = typeof current.today_issue_qty === 'number' ? current.today_issue_qty : 0;
+          const totalR = prevRecv + addedR;
+          const totalI = prevIss + addedI;
+          nextStates[item.id] = {
+            ...current,
+            prev_receive_qty: prevRecv,
+            prev_issue_qty: prevIss,
+            receive_qty: totalR,
+            issue_qty: totalI,
+            balance_qty: totalR > 0 ? Math.max(0, totalR - totalI) : 0
+          };
+        } else {
+          nextStates[item.id] = {
+            id: item.id,
+            prev_receive_qty: prevRecv,
+            today_receive_qty: '',
+            receive_qty: prevRecv,
+            receive_date: '',
+            receive_challan: '',
+            receive_batch_no: '',
+            receive_sub_batches: [],
 
-        balance_qty: item.balance_qty || 0,
-        remarks: item.remarks || ''
-      };
+            prev_issue_qty: prevIss,
+            today_issue_qty: '',
+            issue_qty: prevIss,
+            issue_date: '',
+            issue_challan: '',
+            issue_batch_no: '',
+            issue_sub_batches: [],
+
+            balance_qty: item.balance_qty || 0,
+            remarks: item.remarks || ''
+          };
+        }
+      });
+      return nextStates;
     });
-    setRowStates(initialRowStates);
   }, [searchTerm, selectedBuyer, selectedStyle, allItems]);
+
+  // Debounced Auto-Save trigger
+  useEffect(() => {
+    if (!autoSaveEnabled || isSaving) return;
+
+    // Check if there are any rows with pending changes
+    const rowsWithChanges = (Object.values(rowStates) as ItemRowState[]).filter(r => {
+      const hasRecv = (typeof r.today_receive_qty === 'number' && r.today_receive_qty > 0) ||
+        (r.receive_sub_batches && r.receive_sub_batches.some(b => typeof b.qty === 'number' && b.qty > 0));
+      const hasIss = (typeof r.today_issue_qty === 'number' && r.today_issue_qty > 0) ||
+        (r.issue_sub_batches && r.issue_sub_batches.some(b => typeof b.qty === 'number' && b.qty > 0));
+      return hasRecv || hasIss;
+    });
+
+    if (rowsWithChanges.length === 0) return;
+
+    // Check validation (issue_qty <= receive_qty)
+    const hasInvalid = rowsWithChanges.some(r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0));
+    if (hasInvalid) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setAutoSaveStatus('saving');
+        setIsSaving(true);
+
+        const effectiveDate = globalWorkingDate.trim() || getTodayFormatted();
+        const updatesToSave: QuickUpdatePayload[] = rowsWithChanges.map(r => {
+          const addedRecvTotal = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+          const addedIssTotal = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+
+          const newRecvLogs: TransactionLog[] = [];
+          if (r.receive_sub_batches && r.receive_sub_batches.length > 0) {
+            r.receive_sub_batches.forEach(sb => {
+              const q = typeof sb.qty === 'number' ? sb.qty : 0;
+              if (q > 0) {
+                newRecvLogs.push({
+                  id: Date.now().toString() + Math.random().toString(),
+                  type: 'RECEIVE',
+                  date: r.receive_date || effectiveDate,
+                  challan: sb.challan || r.receive_challan || 'N/A',
+                  batch_no: sb.batch_no || r.receive_batch_no || undefined,
+                  qty: q,
+                  remarks: r.remarks
+                });
+              }
+            });
+          } else if (addedRecvTotal > 0) {
+            newRecvLogs.push({
+              id: Date.now().toString() + Math.random().toString(),
+              type: 'RECEIVE',
+              date: r.receive_date || effectiveDate,
+              challan: r.receive_challan || 'N/A',
+              batch_no: r.receive_batch_no || undefined,
+              qty: addedRecvTotal,
+              remarks: r.remarks
+            });
+          }
+
+          const newIssLogs: TransactionLog[] = [];
+          if (r.issue_sub_batches && r.issue_sub_batches.length > 0) {
+            r.issue_sub_batches.forEach(sb => {
+              const q = typeof sb.qty === 'number' ? sb.qty : 0;
+              if (q > 0) {
+                newIssLogs.push({
+                  id: Date.now().toString() + Math.random().toString(),
+                  type: 'ISSUE',
+                  date: r.issue_date || effectiveDate,
+                  challan: sb.challan || r.issue_challan || 'N/A',
+                  batch_no: sb.batch_no || r.issue_batch_no || undefined,
+                  qty: q,
+                  remarks: r.remarks
+                });
+              }
+            });
+          } else if (addedIssTotal > 0) {
+            newIssLogs.push({
+              id: Date.now().toString() + Math.random().toString(),
+              type: 'ISSUE',
+              date: r.issue_date || effectiveDate,
+              challan: r.issue_challan || 'N/A',
+              batch_no: r.issue_batch_no || undefined,
+              qty: addedIssTotal,
+              remarks: r.remarks
+            });
+          }
+
+          return {
+            id: r.id,
+            receive_qty: Number(r.receive_qty) || 0,
+            receive_date: r.receive_date || effectiveDate,
+            receive_challan: r.receive_challan || '',
+            issue_qty: Number(r.issue_qty) || 0,
+            issue_date: r.issue_date || effectiveDate,
+            issue_challan: r.issue_challan || '',
+            balance_qty: Number(r.balance_qty) || 0,
+            remarks: r.remarks || '',
+            new_receive_logs: newRecvLogs.length > 0 ? newRecvLogs : undefined,
+            new_issue_logs: newIssLogs.length > 0 ? newIssLogs : undefined
+          };
+        });
+
+        await onSaveQuickUpdates(updatesToSave);
+
+        setRowStates(prev => {
+          const nextState = { ...prev };
+          rowsWithChanges.forEach(r => {
+            const current = nextState[r.id];
+            if (current) {
+              nextState[r.id] = {
+                ...current,
+                prev_receive_qty: current.receive_qty,
+                today_receive_qty: '',
+                receive_sub_batches: [],
+                prev_issue_qty: current.issue_qty,
+                today_issue_qty: '',
+                issue_sub_batches: []
+              };
+            }
+          });
+          return nextState;
+        });
+
+        setAutoSaveStatus('saved');
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setAutoSaveStatus('idle');
+          setSaveSuccess(false);
+        }, 2500);
+      } catch (err) {
+        console.error("Auto save failed:", err);
+        setAutoSaveStatus('idle');
+      } finally {
+        setIsSaving(false);
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [rowStates, autoSaveEnabled, isSaving, globalWorkingDate, onSaveQuickUpdates]);
 
   // Helper to recalculate row total receive/issue & balance
   const recalculateRow = (state: ItemRowState): ItemRowState => {
@@ -590,6 +812,35 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
         {/* Right Actions & Theme Switcher */}
         <div className="flex items-center gap-3">
           
+          {/* Auto-Save Toggle & Indicator */}
+          <button
+            type="button"
+            onClick={() => setAutoSaveEnabled(prev => !prev)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all ${
+              autoSaveEnabled
+                ? 'bg-emerald-950 text-emerald-300 border-emerald-600/50 shadow-2xs'
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}
+            title="Toggle Automatic Background Saving"
+          >
+            <span className={`w-2 h-2 rounded-full ${
+              autoSaveStatus === 'saving'
+                ? 'bg-amber-400 animate-ping'
+                : autoSaveStatus === 'saved'
+                ? 'bg-emerald-400'
+                : autoSaveEnabled
+                ? 'bg-emerald-500'
+                : 'bg-slate-500'
+            }`} />
+            <span>
+              {autoSaveStatus === 'saving'
+                ? 'Auto Saving...'
+                : autoSaveStatus === 'saved'
+                ? 'Auto Saved ✓'
+                : `Auto Save: ${autoSaveEnabled ? 'ON' : 'OFF'}`}
+            </span>
+          </button>
+
           {/* Workspace Theme Toggle */}
           <button
             type="button"
@@ -702,20 +953,36 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
           </div>
 
           {/* Search Input */}
-          <div className="md:col-span-6">
-            <label className={`block text-[10px] font-extrabold uppercase tracking-wider mb-1 flex items-center gap-1 ${
-              isDark ? 'text-slate-400' : 'text-slate-600'
-            }`}>
-              <Search className="w-3 h-3 text-indigo-500" />
-              Search Store Ref / Job / Style / Colour
-            </label>
+          <div className="md:col-span-6 relative">
+            <div className="flex items-center justify-between mb-1">
+              <label className={`block text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
+                isDark ? 'text-slate-400' : 'text-slate-600'
+              }`}>
+                <Search className="w-3 h-3 text-indigo-500" />
+                Search Store Ref / Job / Style / Colour
+              </label>
+
+              {hasActiveColFilters && (
+                <button
+                  type="button"
+                  onClick={clearAllColFilters}
+                  className="px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] rounded flex items-center gap-1 shadow-2xs transition-all active:scale-95"
+                  title="Clear all column filters"
+                >
+                  <X className="w-3 h-3" />
+                  Clear Column Filters
+                </button>
+              )}
+            </div>
+
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search GMST-FB-26-00593, Colour, Job No..."
+                onFocus={() => setShowSearchDropdown(true)}
+                placeholder="Click or type to search Store Ref, Colour, Job No..."
                 className={`w-full pl-8 pr-16 py-1.5 rounded-lg font-mono text-xs font-semibold border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
                   isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'
                 }`}
@@ -729,6 +996,58 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                 >
                   Clear
                 </button>
+              )}
+
+              {/* Excel-Style Clickable Filter Suggestions Box Dropdown */}
+              {showSearchDropdown && uniqueStoreRefs.length > 0 && (
+                <div
+                  className={`absolute left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded-xl border shadow-xl z-30 ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                  }`}
+                >
+                  <div className="p-2 border-b border-slate-700/50 flex items-center justify-between text-[10px] font-extrabold text-indigo-400 uppercase tracking-wider">
+                    <span>Excel Filter Suggestions ({uniqueStoreRefs.length} Refs)</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSearchDropdown(false)}
+                      className="p-0.5 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="p-1 space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm('');
+                        setShowSearchDropdown(false);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 text-xs font-bold rounded hover:bg-indigo-600 hover:text-white transition-colors flex items-center justify-between"
+                    >
+                      <span>All Store Refs ({allItems.length} items)</span>
+                      <span className="text-[10px] opacity-70">SHOW ALL</span>
+                    </button>
+                    {uniqueStoreRefs
+                      .filter(ref => !searchTerm || ref.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .map((ref) => {
+                        const count = allItems.filter(i => i.store_ref === ref).length;
+                        return (
+                          <button
+                            key={ref}
+                            type="button"
+                            onClick={() => {
+                              setSearchTerm(ref);
+                              setShowSearchDropdown(false);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 font-mono text-xs font-bold rounded hover:bg-indigo-600 hover:text-white transition-colors flex items-center justify-between"
+                          >
+                            <span>{ref}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/20 text-indigo-300 font-sans">{count} items</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -815,6 +1134,87 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                   </th>
                   <th className={`py-2 px-3 border min-w-[140px] ${isDark ? 'border-slate-700' : 'border-slate-400'}`}>
                     Remarks
+                  </th>
+                </tr>
+
+                {/* EXCEL-STYLE COLUMN FILTER INPUT ROW */}
+                <tr className={`border-b ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-700 border-slate-600'}`}>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.buyer_ref_job}
+                      onChange={e => setColFilters(prev => ({ ...prev, buyer_ref_job: e.target.value }))}
+                      placeholder="🔍 Filter Buyer/Ref/Job..."
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-indigo-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.style_colour}
+                      onChange={e => setColFilters(prev => ({ ...prev, style_colour: e.target.value }))}
+                      placeholder="🔍 Filter Style/Colour..."
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-indigo-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.booking_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, booking_qty: e.target.value }))}
+                      placeholder="Filter Booking"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-indigo-400 text-right ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.receive_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, receive_qty: e.target.value }))}
+                      placeholder="Filter Receive Qty"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-emerald-400 ${
+                        isDark ? 'bg-emerald-950 border-emerald-800 text-emerald-100 placeholder-emerald-400' : 'bg-emerald-950 border-emerald-700 text-emerald-100 placeholder-emerald-300'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.issue_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, issue_qty: e.target.value }))}
+                      placeholder="Filter Issue Qty"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+                        isDark ? 'bg-blue-950 border-blue-800 text-blue-100 placeholder-blue-400' : 'bg-blue-950 border-blue-700 text-blue-100 placeholder-blue-300'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.balance_qty}
+                      onChange={e => setColFilters(prev => ({ ...prev, balance_qty: e.target.value }))}
+                      placeholder="Filter Bal"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-indigo-400 text-right ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
+                  </th>
+                  <th className="p-1">
+                    <input
+                      type="text"
+                      value={colFilters.remarks}
+                      onChange={e => setColFilters(prev => ({ ...prev, remarks: e.target.value }))}
+                      placeholder="Filter Remarks"
+                      className={`w-full px-2 py-1 text-[10px] rounded font-mono font-normal border focus:outline-none focus:ring-1 focus:ring-indigo-400 ${
+                        isDark ? 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-500' : 'bg-slate-900 border-slate-600 text-white placeholder-slate-400'
+                      }`}
+                    />
                   </th>
                 </tr>
               </thead>
