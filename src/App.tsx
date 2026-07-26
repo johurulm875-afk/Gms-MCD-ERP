@@ -541,6 +541,105 @@ export default function App() {
     fetchDrawstringInventory();
   }, []);
 
+  const syncUnsyncedTwillTape = async (unsyncedItems: TwillTapeItem[]) => {
+    if (!unsyncedItems || unsyncedItems.length === 0) return;
+    try {
+      const payloads = unsyncedItems.map(item => ({
+        id: item.id,
+        buyer_name: item.buyer_name || (item as any).buyer || '',
+        buyer: item.buyer_name || (item as any).buyer || '',
+        date: item.date || '',
+        booking_challan: item.booking_challan || '',
+        style: item.style || '',
+        order_no: item.order_no || '',
+        store_ref: item.store_ref || (item as any).twill_ref || '',
+        twill_ref: item.store_ref || (item as any).twill_ref || '',
+        job_no: item.job_no || '',
+        colour: item.colour || (item as any).color || '',
+        color: item.colour || (item as any).color || '',
+        item_name: item.item_name || 'H.B. TAPE',
+        cm: item.cm || '',
+        yds: item.yds || 'YDS',
+        booking_qty: Number(item.booking_qty) || 0,
+        receive_qty: Number(item.receive_qty) || 0,
+        rcvd_qty: Number(item.receive_qty) || 0,
+        receive_date: item.receive_date || '',
+        rcvd_date: item.receive_date || '',
+        receive_challan: item.receive_challan || '',
+        rcvd_challan: item.receive_challan || '',
+        issue_qty: Number(item.issue_qty) || 0,
+        iss_qty: Number(item.issue_qty) || 0,
+        issue_date: item.issue_date || '',
+        iss_date: item.issue_date || '',
+        issue_challan: item.issue_challan || '',
+        iss_challan: item.issue_challan || '',
+        balance_qty: Number(item.balance_qty) || 0,
+        remarks: item.remarks || '',
+        receive_logs: item.receive_logs || [],
+        issue_logs: item.issue_logs || []
+      }));
+
+      const { error } = await supabase.from('twill_tape').upsert(payloads);
+      if (error) {
+        console.warn("Supabase twill_tape auto-sync notice:", error.message);
+      } else {
+        console.log("Successfully auto-synced local twill tape items to Supabase:", unsyncedItems.length);
+      }
+    } catch (e) {
+      console.warn("Twill tape auto-sync error:", e);
+    }
+  };
+
+  const syncUnsyncedSewingThread = async (unsyncedItems: SewingThreadItem[]) => {
+    if (!unsyncedItems || unsyncedItems.length === 0) return;
+    try {
+      const payloads = unsyncedItems.map(item => ({
+        id: item.id,
+        buyer_name: item.buyer_name || item.buyer || '',
+        buyer: item.buyer_name || item.buyer || '',
+        date: item.date || '',
+        booking_challan: item.booking_challan || '',
+        style: item.style || '',
+        order_no: item.order_no || '',
+        store_ref: item.store_ref || item.s_thread_ref || '',
+        s_thread_ref: item.store_ref || item.s_thread_ref || '',
+        job_no: item.job_no || '',
+        colour: item.colour || item.color || '',
+        color: item.colour || item.color || '',
+        item_name: item.item_name || 'Spun Polyester Thread',
+        thread_count: item.thread_count || item.count || '',
+        count: item.thread_count || item.count || '',
+        shade_no: item.shade_no || item.pantone || '',
+        pantone: item.shade_no || item.pantone || '',
+        meter: item.meter || '',
+        per_body_consm: item.per_body_consm || '',
+        supplier: item.supplier || '',
+        booking_qty: Number(item.booking_qty) || 0,
+        receive_qty: Number(item.receive_qty) || 0,
+        rcvd_date: item.receive_date || item.rcvd_date || '',
+        receive_date: item.receive_date || item.rcvd_date || '',
+        rcvd_challan: item.receive_challan || item.rcvd_challan || '',
+        receive_challan: item.receive_challan || item.rcvd_challan || '',
+        issue_qty: Number(item.issue_qty) || 0,
+        issue_date: item.issue_date || '',
+        issue_challan: item.issue_challan || '',
+        balance_qty: Number(item.balance_qty) || 0,
+        remarks: item.remarks || '',
+        receive_logs: item.receive_logs || [],
+        issue_logs: item.issue_logs || []
+      }));
+
+      const { error } = await supabase.from('sewing_thread').upsert(payloads);
+      if (error) {
+        console.warn("Supabase sewing_thread auto-sync notice:", error.message);
+      } else {
+        console.log("Successfully auto-synced local sewing thread items to Supabase:", unsyncedItems.length);
+      }
+    } catch (e) {
+      console.warn("Sewing thread auto-sync error:", e);
+    }
+  };
+
   const syncUnsyncedDrawstring = async (unsyncedItems: DrawstringItem[]) => {
     if (!unsyncedItems || unsyncedItems.length === 0) return;
     try {
@@ -571,6 +670,9 @@ export default function App() {
         rcvd_date: item.receive_date || item.rcvd_date || '',
         receive_date: item.receive_date || item.rcvd_date || '',
         receive_challan: item.receive_challan || '',
+        issue_qty: Number(item.issue_qty) || 0,
+        issue_date: item.issue_date || '',
+        issue_challan: item.issue_challan || '',
         remarks: item.remarks || '',
         unit: item.unit || 'PCS'
       }));
@@ -632,16 +734,46 @@ export default function App() {
           };
         });
 
-        // 2. Merge: Preserve any local items that are not in Supabase yet
-        const supabaseIds = new Set(mappedRecords.map(r => r.id));
-        const unsyncedLocal = localItems.filter(l => !supabaseIds.has(l.id));
+        // 2. Smart merge: Preserve local items and local modifications
+        const mappedMap = new Map(mappedRecords.map(r => [r.id, r]));
+        const merged: DrawstringItem[] = [];
+        const itemsToSync: DrawstringItem[] = [];
 
-        const merged = [...mappedRecords, ...unsyncedLocal];
+        for (const local of localItems) {
+          const sbItem = mappedMap.get(local.id);
+          if (!sbItem) {
+            merged.push(local);
+            itemsToSync.push(local);
+          } else {
+            const isLocalModified = 
+              local.receive_qty !== sbItem.receive_qty ||
+              local.issue_qty !== sbItem.issue_qty ||
+              local.receive_date !== sbItem.receive_date ||
+              local.issue_date !== sbItem.issue_date ||
+              local.receive_challan !== sbItem.receive_challan ||
+              local.issue_challan !== sbItem.issue_challan ||
+              local.remarks !== sbItem.remarks ||
+              (local.receive_logs && local.receive_logs.length > (sbItem.receive_logs?.length || 0)) ||
+              (local.issue_logs && local.issue_logs.length > (sbItem.issue_logs?.length || 0));
+
+            if (isLocalModified) {
+              merged.push(local);
+              itemsToSync.push(local);
+            } else {
+              merged.push(sbItem);
+            }
+            mappedMap.delete(local.id);
+          }
+        }
+        for (const remainingSb of mappedMap.values()) {
+          merged.push(remainingSb);
+        }
+
         setDrawstringItems(merged);
         localStorage.setItem('drawstring_items', JSON.stringify(merged));
 
-        if (unsyncedLocal.length > 0) {
-          syncUnsyncedDrawstring(unsyncedLocal);
+        if (itemsToSync.length > 0) {
+          syncUnsyncedDrawstring(itemsToSync);
         }
       } else if (localItems.length > 0) {
         setDrawstringItems(localItems);
@@ -713,17 +845,52 @@ export default function App() {
           };
         });
 
-        // Merge: keep local items that are not in Supabase
-        const supabaseIds = new Set(mappedRecords.map(r => r.id));
-        const unsyncedLocal = localItems.filter(l => !supabaseIds.has(l.id));
-        const merged = [...mappedRecords, ...unsyncedLocal];
+        // Merge: keep local items and local edits that aren't in Supabase or have local edits
+        const mappedMap = new Map(mappedRecords.map(r => [r.id, r]));
+        const merged: TwillTapeItem[] = [];
+        const itemsToSync: TwillTapeItem[] = [];
+
+        for (const local of localItems) {
+          const sbItem = mappedMap.get(local.id);
+          if (!sbItem) {
+            merged.push(local);
+            itemsToSync.push(local);
+          } else {
+            const isLocalModified = 
+              local.receive_qty !== sbItem.receive_qty ||
+              local.issue_qty !== sbItem.issue_qty ||
+              local.receive_date !== sbItem.receive_date ||
+              local.issue_date !== sbItem.issue_date ||
+              local.receive_challan !== sbItem.receive_challan ||
+              local.issue_challan !== sbItem.issue_challan ||
+              local.remarks !== sbItem.remarks ||
+              (local.receive_logs && local.receive_logs.length > (sbItem.receive_logs?.length || 0)) ||
+              (local.issue_logs && local.issue_logs.length > (sbItem.issue_logs?.length || 0));
+
+            if (isLocalModified) {
+              merged.push(local);
+              itemsToSync.push(local);
+            } else {
+              merged.push(sbItem);
+            }
+            mappedMap.delete(local.id);
+          }
+        }
+        for (const remainingSb of mappedMap.values()) {
+          merged.push(remainingSb);
+        }
 
         setItems(merged);
         localStorage.setItem('twill_tape_items', JSON.stringify(merged));
         setIsConnected(true);
+
+        if (itemsToSync.length > 0) {
+          syncUnsyncedTwillTape(itemsToSync);
+        }
       } else if (localItems.length > 0) {
         setItems(localItems);
         setIsConnected(true);
+        syncUnsyncedTwillTape(localItems);
       } else {
         setIsConnected(true);
         loadFallbackData();
@@ -770,14 +937,49 @@ export default function App() {
           receive_challan: r.receive_challan || r.rcvd_challan || ''
         }));
 
-        const supabaseIds = new Set(mappedRecords.map(r => r.id));
-        const unsyncedLocal = localItems.filter(l => !supabaseIds.has(l.id));
-        const merged = [...mappedRecords, ...unsyncedLocal];
+        const mappedMap = new Map(mappedRecords.map(r => [r.id, r]));
+        const merged: SewingThreadItem[] = [];
+        const itemsToSync: SewingThreadItem[] = [];
+
+        for (const local of localItems) {
+          const sbItem = mappedMap.get(local.id);
+          if (!sbItem) {
+            merged.push(local);
+            itemsToSync.push(local);
+          } else {
+            const isLocalModified = 
+              local.receive_qty !== sbItem.receive_qty ||
+              local.issue_qty !== sbItem.issue_qty ||
+              local.receive_date !== sbItem.receive_date ||
+              local.issue_date !== sbItem.issue_date ||
+              local.receive_challan !== sbItem.receive_challan ||
+              local.issue_challan !== sbItem.issue_challan ||
+              local.remarks !== sbItem.remarks ||
+              (local.receive_logs && local.receive_logs.length > (sbItem.receive_logs?.length || 0)) ||
+              (local.issue_logs && local.issue_logs.length > (sbItem.issue_logs?.length || 0));
+
+            if (isLocalModified) {
+              merged.push(local);
+              itemsToSync.push(local);
+            } else {
+              merged.push(sbItem);
+            }
+            mappedMap.delete(local.id);
+          }
+        }
+        for (const remainingSb of mappedMap.values()) {
+          merged.push(remainingSb);
+        }
 
         setSewingThreadItems(merged);
         localStorage.setItem('sewing_thread_items', JSON.stringify(merged));
+
+        if (itemsToSync.length > 0) {
+          syncUnsyncedSewingThread(itemsToSync);
+        }
       } else if (localItems.length > 0) {
         setSewingThreadItems(localItems);
+        syncUnsyncedSewingThread(localItems);
       } else {
         loadSewingFallbackData();
       }
@@ -959,7 +1161,7 @@ export default function App() {
     }
     showToast(`Updated item #${updatedItem.id} successfully`, "success");
 
-    // 2. Background Supabase update with timeout
+    // 2. Background Supabase upsert with timeout
     try {
       const bName = updatedItem.buyer_name || (updatedItem as any).buyer || '';
       const stRef = updatedItem.store_ref || (updatedItem as any).twill_ref || '';
@@ -969,32 +1171,43 @@ export default function App() {
       const iDate = updatedItem.issue_date || (updatedItem as any).iss_date || '';
       const iChallan = updatedItem.issue_challan || (updatedItem as any).iss_challan || '';
 
+      const payload = {
+        id: updatedItem.id,
+        buyer_name: bName,
+        buyer: bName,
+        date: updatedItem.date || '',
+        booking_challan: updatedItem.booking_challan || '',
+        style: updatedItem.style || '',
+        order_no: updatedItem.order_no || '',
+        store_ref: stRef,
+        twill_ref: stRef,
+        job_no: updatedItem.job_no || '',
+        colour: col,
+        color: col,
+        item_name: updatedItem.item_name || 'H.B. TAPE',
+        cm: updatedItem.cm || '',
+        yds: updatedItem.yds || 'YDS',
+        booking_qty: Number(updatedItem.booking_qty) || 0,
+        receive_qty: Number(updatedItem.receive_qty) || 0,
+        rcvd_qty: Number(updatedItem.receive_qty) || 0,
+        receive_date: rDate,
+        rcvd_date: rDate,
+        receive_challan: rChallan,
+        rcvd_challan: rChallan,
+        issue_qty: Number(updatedItem.issue_qty) || 0,
+        iss_qty: Number(updatedItem.issue_qty) || 0,
+        issue_date: iDate,
+        iss_date: iDate,
+        issue_challan: iChallan,
+        iss_challan: iChallan,
+        balance_qty: Number(updatedItem.balance_qty) || 0,
+        remarks: updatedItem.remarks || '',
+        receive_logs: updatedItem.receive_logs || [],
+        issue_logs: updatedItem.issue_logs || []
+      };
+
       await withTimeout(
-        supabase
-          .from('twill_tape')
-          .update({
-            buyer_name: bName,
-            date: updatedItem.date || '',
-            booking_challan: updatedItem.booking_challan || '',
-            style: updatedItem.style || '',
-            order_no: updatedItem.order_no || '',
-            store_ref: stRef,
-            job_no: updatedItem.job_no || '',
-            colour: col,
-            item_name: updatedItem.item_name || 'H.B. TAPE',
-            cm: updatedItem.cm || '',
-            yds: updatedItem.yds || 'YDS',
-            booking_qty: Number(updatedItem.booking_qty) || 0,
-            receive_qty: Number(updatedItem.receive_qty) || 0,
-            receive_date: rDate,
-            receive_challan: rChallan,
-            issue_qty: Number(updatedItem.issue_qty) || 0,
-            issue_date: iDate,
-            issue_challan: iChallan,
-            balance_qty: Number(updatedItem.balance_qty) || 0,
-            remarks: updatedItem.remarks || ''
-          })
-          .eq('id', updatedItem.id),
+        supabase.from('twill_tape').upsert([payload]),
         3500
       );
     } catch (err) {
@@ -1012,7 +1225,7 @@ export default function App() {
     });
     showToast(`Updated sewing thread item #${updatedItem.id}`, "success");
 
-    // 2. Background Supabase update with timeout
+    // 2. Background Supabase upsert with timeout
     try {
       const bName = updatedItem.buyer_name || updatedItem.buyer || '';
       const stRef = updatedItem.store_ref || updatedItem.s_thread_ref || '';
@@ -1021,43 +1234,47 @@ export default function App() {
       const sNo = updatedItem.shade_no || updatedItem.pantone || '';
       const rDate = updatedItem.receive_date || updatedItem.rcvd_date || '';
       const rChallan = updatedItem.receive_challan || updatedItem.rcvd_challan || '';
+      const iDate = updatedItem.issue_date || '';
+      const iChallan = updatedItem.issue_challan || '';
+
+      const payload = {
+        id: updatedItem.id,
+        buyer_name: bName,
+        buyer: bName,
+        date: updatedItem.date || '',
+        booking_challan: updatedItem.booking_challan || '',
+        style: updatedItem.style || '',
+        order_no: updatedItem.order_no || '',
+        store_ref: stRef,
+        s_thread_ref: stRef,
+        job_no: updatedItem.job_no || '',
+        colour: col,
+        color: col,
+        item_name: updatedItem.item_name || 'Spun Polyester Thread',
+        thread_count: tCount,
+        count: tCount,
+        shade_no: sNo,
+        pantone: sNo,
+        meter: updatedItem.meter || '',
+        per_body_consm: updatedItem.per_body_consm || '',
+        supplier: updatedItem.supplier || '',
+        booking_qty: Number(updatedItem.booking_qty) || 0,
+        receive_qty: Number(updatedItem.receive_qty) || 0,
+        rcvd_date: rDate,
+        receive_date: rDate,
+        rcvd_challan: rChallan,
+        receive_challan: rChallan,
+        issue_qty: Number(updatedItem.issue_qty) || 0,
+        issue_date: iDate,
+        issue_challan: iChallan,
+        balance_qty: Number(updatedItem.balance_qty) || 0,
+        remarks: updatedItem.remarks || '',
+        receive_logs: updatedItem.receive_logs || [],
+        issue_logs: updatedItem.issue_logs || []
+      };
 
       await withTimeout(
-        supabase
-          .from('sewing_thread')
-          .update({
-            buyer_name: bName,
-            buyer: bName,
-            date: updatedItem.date || '',
-            booking_challan: updatedItem.booking_challan || '',
-            style: updatedItem.style || '',
-            order_no: updatedItem.order_no || '',
-            store_ref: stRef,
-            s_thread_ref: stRef,
-            job_no: updatedItem.job_no || '',
-            colour: col,
-            color: col,
-            item_name: updatedItem.item_name || 'Spun Polyester Thread',
-            thread_count: tCount,
-            count: tCount,
-            shade_no: sNo,
-            pantone: sNo,
-            meter: updatedItem.meter || '',
-            per_body_consm: updatedItem.per_body_consm || '',
-            supplier: updatedItem.supplier || '',
-            booking_qty: Number(updatedItem.booking_qty) || 0,
-            receive_qty: Number(updatedItem.receive_qty) || 0,
-            rcvd_date: rDate,
-            receive_date: rDate,
-            rcvd_challan: rChallan,
-            receive_challan: rChallan,
-            issue_qty: Number(updatedItem.issue_qty) || 0,
-            issue_date: updatedItem.issue_date || '',
-            issue_challan: updatedItem.issue_challan || '',
-            balance_qty: Number(updatedItem.balance_qty) || 0,
-            remarks: updatedItem.remarks || ''
-          })
-          .eq('id', updatedItem.id),
+        supabase.from('sewing_thread').upsert([payload]),
         3500
       );
     } catch (err) {
@@ -1145,8 +1362,9 @@ export default function App() {
   // Batch Quick Updates by Store Ref
   const handleSaveQuickUpdates = async (updates: QuickUpdatePayload[]) => {
     // 1. Instant local update
+    let nextList: TwillTapeItem[] = [];
     setItems(prev => {
-      const nextList = prev.map(item => {
+      nextList = prev.map(item => {
         const match = updates.find(u => u.id === item.id);
         if (match) {
           const updatedRecvLogs = [...(item.receive_logs || [])];
@@ -1178,27 +1396,47 @@ export default function App() {
     });
     showToast(`Batch updated ${updates.length} item(s) in real-time!`, "success");
 
-    // 2. Parallel Supabase sync with timeout
+    // 2. Build full payload objects and upsert to Supabase
+    const updatedItems = nextList.filter(item => updates.some(u => u.id === item.id));
+    const payloads = updatedItems.map(item => ({
+      id: item.id,
+      buyer_name: item.buyer_name || (item as any).buyer || '',
+      buyer: item.buyer_name || (item as any).buyer || '',
+      date: item.date || '',
+      booking_challan: item.booking_challan || '',
+      style: item.style || '',
+      order_no: item.order_no || '',
+      store_ref: item.store_ref || (item as any).twill_ref || '',
+      twill_ref: item.store_ref || (item as any).twill_ref || '',
+      job_no: item.job_no || '',
+      colour: item.colour || (item as any).color || '',
+      color: item.colour || (item as any).color || '',
+      item_name: item.item_name || 'H.B. TAPE',
+      cm: item.cm || '',
+      yds: item.yds || 'YDS',
+      booking_qty: Number(item.booking_qty) || 0,
+      receive_qty: Number(item.receive_qty) || 0,
+      rcvd_qty: Number(item.receive_qty) || 0,
+      receive_date: item.receive_date || '',
+      rcvd_date: item.receive_date || '',
+      receive_challan: item.receive_challan || '',
+      rcvd_challan: item.receive_challan || '',
+      issue_qty: Number(item.issue_qty) || 0,
+      iss_qty: Number(item.issue_qty) || 0,
+      issue_date: item.issue_date || '',
+      iss_date: item.issue_date || '',
+      issue_challan: item.issue_challan || '',
+      iss_challan: item.issue_challan || '',
+      balance_qty: Number(item.balance_qty) || 0,
+      remarks: item.remarks || '',
+      receive_logs: item.receive_logs || [],
+      issue_logs: item.issue_logs || []
+    }));
+
     try {
-      await Promise.allSettled(
-        updates.map(update =>
-          withTimeout(
-            supabase
-              .from('twill_tape')
-              .update({
-                receive_qty: update.receive_qty,
-                receive_date: update.receive_date,
-                receive_challan: update.receive_challan,
-                issue_qty: update.issue_qty,
-                issue_date: update.issue_date,
-                issue_challan: update.issue_challan,
-                balance_qty: update.balance_qty,
-                remarks: update.remarks
-              })
-              .eq('id', update.id),
-            3500
-          )
-        )
+      await withTimeout(
+        supabase.from('twill_tape').upsert(payloads),
+        4000
       );
     } catch (err) {
       console.warn("Notice saving twill tape quick updates:", err);
@@ -1208,8 +1446,9 @@ export default function App() {
   // Batch Quick Updates by Store Ref for Sewing Thread
   const handleSaveSewingQuickUpdates = async (updates: QuickUpdatePayload[]) => {
     // 1. Instant local update
+    let nextList: SewingThreadItem[] = [];
     setSewingThreadItems(prev => {
-      const nextList = prev.map(item => {
+      nextList = prev.map(item => {
         const match = updates.find(u => u.id === item.id);
         if (match) {
           const updatedRecvLogs = [...(item.receive_logs || [])];
@@ -1241,29 +1480,48 @@ export default function App() {
     });
     showToast(`Batch updated ${updates.length} sewing thread item(s)!`, "success");
 
-    // 2. Parallel Supabase sync with timeout
+    // 2. Build full payload objects and upsert to Supabase
+    const updatedItems = nextList.filter(item => updates.some(u => u.id === item.id));
+    const payloads = updatedItems.map(item => ({
+      id: item.id,
+      buyer_name: item.buyer_name || item.buyer || '',
+      buyer: item.buyer_name || item.buyer || '',
+      date: item.date || '',
+      booking_challan: item.booking_challan || '',
+      style: item.style || '',
+      order_no: item.order_no || '',
+      store_ref: item.store_ref || item.s_thread_ref || '',
+      s_thread_ref: item.store_ref || item.s_thread_ref || '',
+      job_no: item.job_no || '',
+      colour: item.colour || item.color || '',
+      color: item.colour || item.color || '',
+      item_name: item.item_name || 'Spun Polyester Thread',
+      thread_count: item.thread_count || item.count || '',
+      count: item.thread_count || item.count || '',
+      shade_no: item.shade_no || item.pantone || '',
+      pantone: item.shade_no || item.pantone || '',
+      meter: item.meter || '',
+      per_body_consm: item.per_body_consm || '',
+      supplier: item.supplier || '',
+      booking_qty: Number(item.booking_qty) || 0,
+      receive_qty: Number(item.receive_qty) || 0,
+      rcvd_date: item.receive_date || item.rcvd_date || '',
+      receive_date: item.receive_date || item.rcvd_date || '',
+      rcvd_challan: item.receive_challan || item.rcvd_challan || '',
+      receive_challan: item.receive_challan || item.rcvd_challan || '',
+      issue_qty: Number(item.issue_qty) || 0,
+      issue_date: item.issue_date || '',
+      issue_challan: item.issue_challan || '',
+      balance_qty: Number(item.balance_qty) || 0,
+      remarks: item.remarks || '',
+      receive_logs: item.receive_logs || [],
+      issue_logs: item.issue_logs || []
+    }));
+
     try {
-      await Promise.allSettled(
-        updates.map(update =>
-          withTimeout(
-            supabase
-              .from('sewing_thread')
-              .update({
-                receive_qty: update.receive_qty,
-                receive_date: update.receive_date,
-                rcvd_date: update.receive_date,
-                receive_challan: update.receive_challan,
-                rcvd_challan: update.receive_challan,
-                issue_qty: update.issue_qty,
-                issue_date: update.issue_date,
-                issue_challan: update.issue_challan,
-                balance_qty: update.balance_qty,
-                remarks: update.remarks
-              })
-              .eq('id', update.id),
-            3500
-          )
-        )
+      await withTimeout(
+        supabase.from('sewing_thread').upsert(payloads),
+        4000
       );
     } catch (err) {
       console.warn("Notice saving sewing thread quick updates:", err);
