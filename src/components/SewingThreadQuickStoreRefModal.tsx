@@ -75,7 +75,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Auto save state
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(true);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   // Excel-style column filters for every column
@@ -330,14 +330,19 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
             remarks: r.remarks
           } : undefined;
 
+          const finalRecvDate = addedRecvTotal > 0 ? (r.receive_date || effectiveDate) : (r.receive_date || '');
+          const finalRecvChallan = r.receive_challan || '';
+          const finalIssDate = addedIssTotal > 0 ? (r.issue_date || effectiveDate) : (r.issue_date || '');
+          const finalIssChallan = r.issue_challan || '';
+
           return {
             id: r.id,
             receive_qty: Number(r.receive_qty) || 0,
-            receive_date: r.receive_date || effectiveDate,
-            receive_challan: r.receive_challan || '',
+            receive_date: finalRecvDate,
+            receive_challan: finalRecvChallan,
             issue_qty: Number(r.issue_qty) || 0,
-            issue_date: r.issue_date || effectiveDate,
-            issue_challan: r.issue_challan || '',
+            issue_date: finalIssDate,
+            issue_challan: finalIssChallan,
             balance_qty: Number(r.balance_qty) || 0,
             remarks: r.remarks || '',
             new_receive_log: newRecvLog,
@@ -476,14 +481,19 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
         remarks: r.remarks
       } : undefined;
 
+      const finalRecvDate = addedRecvTotal > 0 ? (r.receive_date || effectiveDate) : (r.receive_date || '');
+      const finalRecvChallan = r.receive_challan || '';
+      const finalIssDate = addedIssTotal > 0 ? (r.issue_date || effectiveDate) : (r.issue_date || '');
+      const finalIssChallan = r.issue_challan || '';
+
       return {
         id: r.id,
         receive_qty: Number(r.receive_qty) || 0,
-        receive_date: r.receive_date || effectiveDate,
-        receive_challan: r.receive_challan || '',
+        receive_date: finalRecvDate,
+        receive_challan: finalRecvChallan,
         issue_qty: Number(r.issue_qty) || 0,
-        issue_date: r.issue_date || effectiveDate,
-        issue_challan: r.issue_challan || '',
+        issue_date: finalIssDate,
+        issue_challan: finalIssChallan,
         balance_qty: Number(r.balance_qty) || 0,
         remarks: r.remarks || '',
         new_receive_log: newRecvLog,

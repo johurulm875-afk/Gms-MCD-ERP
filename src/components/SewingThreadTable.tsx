@@ -751,12 +751,12 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                         </span>
                       </td>
 
-                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.receive_date || item.rcvd_date || '-'}</td>
-                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.receive_challan || item.rcvd_challan || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{(item.receive_qty || 0) > 0 ? (item.receive_date || item.rcvd_date || '-') : '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{(item.receive_qty || 0) > 0 ? (item.receive_challan || item.rcvd_challan || '-') : '-'}</td>
                       <td className="py-2.5 px-2 text-right font-mono font-bold text-emerald-900 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.receive_qty?.toLocaleString() ?? 0}</td>
 
-                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.issue_date || '-'}</td>
-                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.issue_challan || '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{(item.issue_qty || 0) > 0 ? (item.issue_date || '-') : '-'}</td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{(item.issue_qty || 0) > 0 ? (item.issue_challan || '-') : '-'}</td>
                       <td className="py-2.5 px-2 text-right font-mono font-bold text-blue-900 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.issue_qty?.toLocaleString() ?? 0}</td>
 
                       {/* Balance Qty Cell: if balance is 0, clean white background badge */}

@@ -461,12 +461,12 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
 
                     {/* Receive Date */}
                     <td className="py-2.5 px-2 font-mono text-[11px] text-slate-800">
-                      {item.receive_date || '—'}
+                      {(item.receive_qty > 0) ? (item.receive_date || '—') : '—'}
                     </td>
 
                     {/* Receive Challan */}
                     <td className="py-2.5 px-2 font-mono text-[11px] text-slate-800">
-                      {item.receive_challan || '—'}
+                      {(item.receive_qty > 0) ? (item.receive_challan || '—') : '—'}
                     </td>
 
                     {/* Issue Qty */}
@@ -478,12 +478,12 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
 
                     {/* Issue Date */}
                     <td className="py-2.5 px-2 font-mono text-[11px] text-slate-800">
-                      {item.issue_date || '—'}
+                      {(item.issue_qty > 0) ? (item.issue_date || '—') : '—'}
                     </td>
 
                     {/* Issue Challan */}
                     <td className="py-2.5 px-2 font-mono text-[11px] text-slate-800">
-                      {item.issue_challan || '—'}
+                      {(item.issue_qty > 0) ? (item.issue_challan || '—') : '—'}
                     </td>
 
                     {/* Balance Qty */}
