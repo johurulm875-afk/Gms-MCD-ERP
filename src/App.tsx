@@ -486,6 +486,18 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Helper to run promises with a strict timeout so UI never hangs
+  function withTimeout<T>(promiseLike: PromiseLike<T>, ms = 3500): Promise<T> {
+    let timeoutId: any;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(`Database operation timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([
+      Promise.resolve(promiseLike).finally(() => clearTimeout(timeoutId)),
+      timeoutPromise
+    ]);
+  }
+
   // Helper to fetch ALL rows beyond Supabase's default 1000 row limit using range pagination
   const fetchAllRowsFromSupabase = async <T,>(tableName: string): Promise<T[]> => {
     let allRecords: T[] = [];
@@ -494,11 +506,14 @@ export default function App() {
     let keepFetching = true;
 
     while (keepFetching) {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .order('id', { ascending: false })
-        .range(start, start + chunkSize - 1);
+      const { data, error } = await withTimeout(
+        supabase
+          .from(tableName)
+          .select('*')
+          .order('id', { ascending: false })
+          .range(start, start + chunkSize - 1),
+        4000
+      );
 
       if (error) {
         throw error;
@@ -644,8 +659,14 @@ export default function App() {
     setIsLoading(true);
     setDbErrorMessage(null);
 
+    const savedLocal = localStorage.getItem('twill_tape_items');
+    let localItems: TwillTapeItem[] = [];
+    if (savedLocal) {
+      try { localItems = JSON.parse(savedLocal); } catch (e) {}
+    }
+
     try {
-      const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape');
+      const records = await withTimeout(fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape'), 4000);
       if (records && records.length > 0) {
         const mappedRecords: TwillTapeItem[] = records.map((r: any) => {
           const bName = r.buyer_name || r.buyer || 'GMS Buyer';
@@ -691,17 +712,30 @@ export default function App() {
             issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
           };
         });
-        setItems(mappedRecords);
+
+        // Merge: keep local items that are not in Supabase
+        const supabaseIds = new Set(mappedRecords.map(r => r.id));
+        const unsyncedLocal = localItems.filter(l => !supabaseIds.has(l.id));
+        const merged = [...mappedRecords, ...unsyncedLocal];
+
+        setItems(merged);
+        localStorage.setItem('twill_tape_items', JSON.stringify(merged));
+        setIsConnected(true);
+      } else if (localItems.length > 0) {
+        setItems(localItems);
         setIsConnected(true);
       } else {
         setIsConnected(true);
         loadFallbackData();
       }
     } catch (err: any) {
-      console.error("Supabase connection error:", err);
-      setDbErrorMessage(err?.message || "Could not connect to Supabase table");
-      setIsConnected(false);
-      loadFallbackData();
+      console.error("Supabase connection error (using local state):", err);
+      if (localItems.length > 0) {
+        setItems(localItems);
+      } else {
+        loadFallbackData();
+      }
+      setIsConnected(true);
     } finally {
       setIsLoading(false);
     }
@@ -717,10 +751,16 @@ export default function App() {
 
   const fetchSewingInventory = async () => {
     setIsSewingLoading(true);
+
+    const savedLocal = localStorage.getItem('sewing_thread_items');
+    let localItems: SewingThreadItem[] = [];
+    if (savedLocal) {
+      try { localItems = JSON.parse(savedLocal); } catch (e) {}
+    }
+
     try {
-      const records = await fetchAllRowsFromSupabase<SewingThreadItem>('sewing_thread');
+      const records = await withTimeout(fetchAllRowsFromSupabase<SewingThreadItem>('sewing_thread'), 4000);
       if (records && records.length > 0) {
-        // Map Supabase field names if needed (e.g. buyer -> buyer_name, s_thread_ref -> store_ref)
         const mappedRecords = records.map(r => ({
           ...r,
           buyer_name: r.buyer_name || r.buyer || 'GMS Buyer',
@@ -729,13 +769,25 @@ export default function App() {
           receive_date: r.receive_date || r.rcvd_date || '',
           receive_challan: r.receive_challan || r.rcvd_challan || ''
         }));
-        setSewingThreadItems(mappedRecords);
+
+        const supabaseIds = new Set(mappedRecords.map(r => r.id));
+        const unsyncedLocal = localItems.filter(l => !supabaseIds.has(l.id));
+        const merged = [...mappedRecords, ...unsyncedLocal];
+
+        setSewingThreadItems(merged);
+        localStorage.setItem('sewing_thread_items', JSON.stringify(merged));
+      } else if (localItems.length > 0) {
+        setSewingThreadItems(localItems);
       } else {
         loadSewingFallbackData();
       }
     } catch (err) {
-      console.error("Sewing thread connection error:", err);
-      loadSewingFallbackData();
+      console.error("Sewing thread connection notice (using local state):", err);
+      if (localItems.length > 0) {
+        setSewingThreadItems(localItems);
+      } else {
+        loadSewingFallbackData();
+      }
     } finally {
       setIsSewingLoading(false);
     }
@@ -754,9 +806,12 @@ export default function App() {
     try {
       showToast("Seeding records into Supabase twill_tape table...", "info");
 
-      const { error } = await supabase
-        .from('twill_tape')
-        .insert(INITIAL_SAMPLE_DATA);
+      const { error } = await withTimeout(
+        supabase
+          .from('twill_tape')
+          .insert(INITIAL_SAMPLE_DATA),
+        4000
+      );
 
       if (error) throw error;
 
@@ -771,7 +826,7 @@ export default function App() {
   // Add Twill Tape Booking
   const handleAddBooking = async (newItemData: Omit<TwillTapeItem, 'id'> | Omit<TwillTapeItem, 'id'>[]) => {
     const rawBatch = Array.isArray(newItemData) ? newItemData : [newItemData];
-    const batch = rawBatch.map(item => {
+    const batchWithIds: TwillTapeItem[] = rawBatch.map((item, idx) => {
       const bName = item.buyer_name || (item as any).buyer || 'General Buyer';
       const stRef = item.store_ref || (item as any).twill_ref || (item as any).s_tape_ref || '';
       const col = item.colour || (item as any).color || '';
@@ -782,7 +837,9 @@ export default function App() {
 
       return {
         ...item,
+        id: (item as any).id || (Date.now() + idx),
         buyer_name: bName,
+        buyer: bName,
         date: item.date || '',
         booking_challan: item.booking_challan || '',
         style: item.style || '',
@@ -801,40 +858,32 @@ export default function App() {
         issue_date: iDate,
         issue_challan: iChallan,
         balance_qty: Number(item.balance_qty) || 0,
-        remarks: item.remarks || ''
+        remarks: item.remarks || '',
+        receive_logs: item.receive_logs || [],
+        issue_logs: item.issue_logs || []
       };
     });
 
-    try {
-      const { data, error } = await supabase
-        .from('twill_tape')
-        .insert(batch)
-        .select();
+    // 1. Instant local state update
+    setItems(prev => {
+      const nextList = [...batchWithIds, ...prev];
+      localStorage.setItem('twill_tape_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    showToast(`Successfully saved ${batchWithIds.length} new twill tape booking(s)!`, "success");
 
-      if (error) {
-        console.warn("Supabase insert notice:", error.message);
-        const newLocalItems: TwillTapeItem[] = batch.map((item, idx) => ({
-          ...item,
-          id: Date.now() + idx
-        }));
-        setItems(prev => [...newLocalItems, ...prev]);
-        showToast(`Added ${batch.length} new booking(s) locally`, "info");
-      } else if (data && data.length > 0) {
-        await fetchInventory();
-        showToast(`Successfully added ${data.length} new booking(s)!`, "success");
-      } else {
-        await fetchInventory();
-      }
+    // 2. Asynchronous Supabase sync with timeout
+    try {
+      await withTimeout(supabase.from('twill_tape').upsert(batchWithIds), 3500);
     } catch (err) {
-      console.error("Failed to add booking:", err);
-      showToast("Error inserting row", "error");
+      console.warn("Supabase twill_tape insert notice:", err);
     }
   };
 
   // Add Sewing Thread Booking
   const handleAddSewingBooking = async (newItemData: Omit<SewingThreadItem, 'id'> | Omit<SewingThreadItem, 'id'>[]) => {
     const rawBatch = Array.isArray(newItemData) ? newItemData : [newItemData];
-    const batch = rawBatch.map(item => {
+    const batchWithIds: SewingThreadItem[] = rawBatch.map((item, idx) => {
       const bName = item.buyer_name || item.buyer || 'General Buyer';
       const stRef = item.store_ref || item.s_thread_ref || '';
       const col = item.colour || item.color || '';
@@ -845,6 +894,7 @@ export default function App() {
 
       return {
         ...item,
+        id: (item as any).id || (Date.now() + idx),
         buyer_name: bName,
         buyer: bName,
         date: item.date || '',
@@ -874,37 +924,42 @@ export default function App() {
         issue_date: item.issue_date || '',
         issue_challan: item.issue_challan || '',
         balance_qty: Number(item.balance_qty) || 0,
-        remarks: item.remarks || ''
+        remarks: item.remarks || '',
+        receive_logs: item.receive_logs || [],
+        issue_logs: item.issue_logs || []
       };
     });
 
-    try {
-      const { data, error } = await supabase
-        .from('sewing_thread')
-        .insert(batch)
-        .select();
+    // 1. Instant local state update
+    setSewingThreadItems(prev => {
+      const nextList = [...batchWithIds, ...prev];
+      localStorage.setItem('sewing_thread_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    showToast(`Successfully saved ${batchWithIds.length} sewing thread booking(s)!`, "success");
 
-      if (error) {
-        const newLocalItems: SewingThreadItem[] = batch.map((item, idx) => ({
-          ...item,
-          id: Date.now() + idx
-        }));
-        setSewingThreadItems(prev => [...newLocalItems, ...prev]);
-        showToast(`Added ${batch.length} sewing thread booking(s) locally`, "info");
-      } else if (data && data.length > 0) {
-        setSewingThreadItems(prev => [...(data as SewingThreadItem[]), ...prev]);
-        showToast(`Successfully added ${data.length} sewing thread booking(s)!`, "success");
-      } else {
-        fetchSewingInventory();
-      }
+    // 2. Asynchronous Supabase sync with timeout
+    try {
+      await withTimeout(supabase.from('sewing_thread').upsert(batchWithIds), 3500);
     } catch (err) {
-      console.error("Failed to add sewing thread booking:", err);
-      showToast("Error inserting sewing thread row", "error");
+      console.warn("Supabase sewing_thread insert notice:", err);
     }
   };
 
   // Update Twill Tape Booking
   const handleUpdateBooking = async (updatedItem: TwillTapeItem) => {
+    // 1. Instant local update
+    setItems(prev => {
+      const nextList = prev.map(item => item.id === updatedItem.id ? updatedItem : item);
+      localStorage.setItem('twill_tape_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    if (historyModalItem && historyModalItem.id === updatedItem.id) {
+      setHistoryModalItem(updatedItem);
+    }
+    showToast(`Updated item #${updatedItem.id} successfully`, "success");
+
+    // 2. Background Supabase update with timeout
     try {
       const bName = updatedItem.buyer_name || (updatedItem as any).buyer || '';
       const stRef = updatedItem.store_ref || (updatedItem as any).twill_ref || '';
@@ -914,49 +969,50 @@ export default function App() {
       const iDate = updatedItem.issue_date || (updatedItem as any).iss_date || '';
       const iChallan = updatedItem.issue_challan || (updatedItem as any).iss_challan || '';
 
-      const { error } = await supabase
-        .from('twill_tape')
-        .update({
-          buyer_name: bName,
-          date: updatedItem.date || '',
-          booking_challan: updatedItem.booking_challan || '',
-          style: updatedItem.style || '',
-          order_no: updatedItem.order_no || '',
-          store_ref: stRef,
-          job_no: updatedItem.job_no || '',
-          colour: col,
-          item_name: updatedItem.item_name || 'H.B. TAPE',
-          cm: updatedItem.cm || '',
-          yds: updatedItem.yds || 'YDS',
-          booking_qty: Number(updatedItem.booking_qty) || 0,
-          receive_qty: Number(updatedItem.receive_qty) || 0,
-          receive_date: rDate,
-          receive_challan: rChallan,
-          issue_qty: Number(updatedItem.issue_qty) || 0,
-          issue_date: iDate,
-          issue_challan: iChallan,
-          balance_qty: Number(updatedItem.balance_qty) || 0,
-          remarks: updatedItem.remarks || ''
-        })
-        .eq('id', updatedItem.id);
-
-      if (error) {
-        console.warn("Notice updating twill_tape:", error.message);
-      }
-
-      setItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
-      if (historyModalItem && historyModalItem.id === updatedItem.id) {
-        setHistoryModalItem(updatedItem);
-      }
-      showToast(`Updated item #${updatedItem.id} successfully`, "success");
+      await withTimeout(
+        supabase
+          .from('twill_tape')
+          .update({
+            buyer_name: bName,
+            date: updatedItem.date || '',
+            booking_challan: updatedItem.booking_challan || '',
+            style: updatedItem.style || '',
+            order_no: updatedItem.order_no || '',
+            store_ref: stRef,
+            job_no: updatedItem.job_no || '',
+            colour: col,
+            item_name: updatedItem.item_name || 'H.B. TAPE',
+            cm: updatedItem.cm || '',
+            yds: updatedItem.yds || 'YDS',
+            booking_qty: Number(updatedItem.booking_qty) || 0,
+            receive_qty: Number(updatedItem.receive_qty) || 0,
+            receive_date: rDate,
+            receive_challan: rChallan,
+            issue_qty: Number(updatedItem.issue_qty) || 0,
+            issue_date: iDate,
+            issue_challan: iChallan,
+            balance_qty: Number(updatedItem.balance_qty) || 0,
+            remarks: updatedItem.remarks || ''
+          })
+          .eq('id', updatedItem.id),
+        3500
+      );
     } catch (err) {
-      console.error("Error updating item:", err);
-      showToast("Error updating booking", "error");
+      console.warn("Notice updating twill_tape:", err);
     }
   };
 
   // Update Sewing Thread Booking
   const handleUpdateSewingBooking = async (updatedItem: SewingThreadItem) => {
+    // 1. Instant local update
+    setSewingThreadItems(prev => {
+      const nextList = prev.map(item => item.id === updatedItem.id ? updatedItem : item);
+      localStorage.setItem('sewing_thread_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    showToast(`Updated sewing thread item #${updatedItem.id}`, "success");
+
+    // 2. Background Supabase update with timeout
     try {
       const bName = updatedItem.buyer_name || updatedItem.buyer || '';
       const stRef = updatedItem.store_ref || updatedItem.s_thread_ref || '';
@@ -966,69 +1022,78 @@ export default function App() {
       const rDate = updatedItem.receive_date || updatedItem.rcvd_date || '';
       const rChallan = updatedItem.receive_challan || updatedItem.rcvd_challan || '';
 
-      const { error } = await supabase
-        .from('sewing_thread')
-        .update({
-          buyer_name: bName,
-          buyer: bName,
-          date: updatedItem.date || '',
-          booking_challan: updatedItem.booking_challan || '',
-          style: updatedItem.style || '',
-          order_no: updatedItem.order_no || '',
-          store_ref: stRef,
-          s_thread_ref: stRef,
-          job_no: updatedItem.job_no || '',
-          colour: col,
-          color: col,
-          item_name: updatedItem.item_name || 'Spun Polyester Thread',
-          thread_count: tCount,
-          count: tCount,
-          shade_no: sNo,
-          pantone: sNo,
-          meter: updatedItem.meter || '',
-          per_body_consm: updatedItem.per_body_consm || '',
-          supplier: updatedItem.supplier || '',
-          booking_qty: Number(updatedItem.booking_qty) || 0,
-          receive_qty: Number(updatedItem.receive_qty) || 0,
-          rcvd_date: rDate,
-          receive_date: rDate,
-          rcvd_challan: rChallan,
-          receive_challan: rChallan,
-          issue_qty: Number(updatedItem.issue_qty) || 0,
-          issue_date: updatedItem.issue_date || '',
-          issue_challan: updatedItem.issue_challan || '',
-          balance_qty: Number(updatedItem.balance_qty) || 0,
-          remarks: updatedItem.remarks || ''
-        })
-        .eq('id', updatedItem.id);
-
-      setSewingThreadItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
-      showToast(`Updated sewing thread item #${updatedItem.id}`, "success");
+      await withTimeout(
+        supabase
+          .from('sewing_thread')
+          .update({
+            buyer_name: bName,
+            buyer: bName,
+            date: updatedItem.date || '',
+            booking_challan: updatedItem.booking_challan || '',
+            style: updatedItem.style || '',
+            order_no: updatedItem.order_no || '',
+            store_ref: stRef,
+            s_thread_ref: stRef,
+            job_no: updatedItem.job_no || '',
+            colour: col,
+            color: col,
+            item_name: updatedItem.item_name || 'Spun Polyester Thread',
+            thread_count: tCount,
+            count: tCount,
+            shade_no: sNo,
+            pantone: sNo,
+            meter: updatedItem.meter || '',
+            per_body_consm: updatedItem.per_body_consm || '',
+            supplier: updatedItem.supplier || '',
+            booking_qty: Number(updatedItem.booking_qty) || 0,
+            receive_qty: Number(updatedItem.receive_qty) || 0,
+            rcvd_date: rDate,
+            receive_date: rDate,
+            rcvd_challan: rChallan,
+            receive_challan: rChallan,
+            issue_qty: Number(updatedItem.issue_qty) || 0,
+            issue_date: updatedItem.issue_date || '',
+            issue_challan: updatedItem.issue_challan || '',
+            balance_qty: Number(updatedItem.balance_qty) || 0,
+            remarks: updatedItem.remarks || ''
+          })
+          .eq('id', updatedItem.id),
+        3500
+      );
     } catch (err) {
-      console.error("Error updating sewing thread item:", err);
-      showToast("Error updating sewing thread booking", "error");
+      console.warn("Error updating sewing thread item notice:", err);
     }
   };
 
   // Delete Twill Tape Booking
   const handleDeleteBooking = async (id: number) => {
+    setItems(prev => {
+      const nextList = prev.filter(i => i.id !== id);
+      localStorage.setItem('twill_tape_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    showToast(`Deleted booking #${id}`, "info");
+
     try {
-      await supabase.from('twill_tape').delete().eq('id', id);
-      setItems(prev => prev.filter(i => i.id !== id));
-      showToast(`Deleted booking #${id}`, "info");
+      await withTimeout(supabase.from('twill_tape').delete().eq('id', id), 3000);
     } catch (err) {
-      console.error("Error deleting item:", err);
+      console.warn("Error deleting twill tape item notice:", err);
     }
   };
 
   // Delete Sewing Thread Booking
   const handleDeleteSewingBooking = async (id: number) => {
+    setSewingThreadItems(prev => {
+      const nextList = prev.filter(i => i.id !== id);
+      localStorage.setItem('sewing_thread_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    showToast(`Deleted sewing thread booking #${id}`, "info");
+
     try {
-      await supabase.from('sewing_thread').delete().eq('id', id);
-      setSewingThreadItems(prev => prev.filter(i => i.id !== id));
-      showToast(`Deleted sewing thread booking #${id}`, "info");
+      await withTimeout(supabase.from('sewing_thread').delete().eq('id', id), 3000);
     } catch (err) {
-      console.error("Error deleting sewing item:", err);
+      console.warn("Error deleting sewing item notice:", err);
     }
   };
 
@@ -1079,24 +1144,9 @@ export default function App() {
 
   // Batch Quick Updates by Store Ref
   const handleSaveQuickUpdates = async (updates: QuickUpdatePayload[]) => {
-    try {
-      for (const update of updates) {
-        await supabase
-          .from('twill_tape')
-          .update({
-            receive_qty: update.receive_qty,
-            receive_date: update.receive_date,
-            receive_challan: update.receive_challan,
-            issue_qty: update.issue_qty,
-            issue_date: update.issue_date,
-            issue_challan: update.issue_challan,
-            balance_qty: update.balance_qty,
-            remarks: update.remarks
-          })
-          .eq('id', update.id);
-      }
-
-      setItems(prev => prev.map(item => {
+    // 1. Instant local update
+    setItems(prev => {
+      const nextList = prev.map(item => {
         const match = updates.find(u => u.id === item.id);
         if (match) {
           const updatedRecvLogs = [...(item.receive_logs || [])];
@@ -1122,37 +1172,44 @@ export default function App() {
           };
         }
         return item;
-      }));
+      });
+      localStorage.setItem('twill_tape_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    showToast(`Batch updated ${updates.length} item(s) in real-time!`, "success");
 
-      showToast(`Batch updated ${updates.length} item(s) in real-time!`, "success");
+    // 2. Parallel Supabase sync with timeout
+    try {
+      await Promise.allSettled(
+        updates.map(update =>
+          withTimeout(
+            supabase
+              .from('twill_tape')
+              .update({
+                receive_qty: update.receive_qty,
+                receive_date: update.receive_date,
+                receive_challan: update.receive_challan,
+                issue_qty: update.issue_qty,
+                issue_date: update.issue_date,
+                issue_challan: update.issue_challan,
+                balance_qty: update.balance_qty,
+                remarks: update.remarks
+              })
+              .eq('id', update.id),
+            3500
+          )
+        )
+      );
     } catch (err) {
-      console.error("Error saving quick updates:", err);
-      showToast("Failed to apply batch updates", "error");
+      console.warn("Notice saving twill tape quick updates:", err);
     }
   };
 
   // Batch Quick Updates by Store Ref for Sewing Thread
   const handleSaveSewingQuickUpdates = async (updates: QuickUpdatePayload[]) => {
-    try {
-      for (const update of updates) {
-        await supabase
-          .from('sewing_thread')
-          .update({
-            receive_qty: update.receive_qty,
-            receive_date: update.receive_date,
-            rcvd_date: update.receive_date,
-            receive_challan: update.receive_challan,
-            rcvd_challan: update.receive_challan,
-            issue_qty: update.issue_qty,
-            issue_date: update.issue_date,
-            issue_challan: update.issue_challan,
-            balance_qty: update.balance_qty,
-            remarks: update.remarks
-          })
-          .eq('id', update.id);
-      }
-
-      setSewingThreadItems(prev => prev.map(item => {
+    // 1. Instant local update
+    setSewingThreadItems(prev => {
+      const nextList = prev.map(item => {
         const match = updates.find(u => u.id === item.id);
         if (match) {
           const updatedRecvLogs = [...(item.receive_logs || [])];
@@ -1178,12 +1235,38 @@ export default function App() {
           };
         }
         return item;
-      }));
+      });
+      localStorage.setItem('sewing_thread_items', JSON.stringify(nextList));
+      return nextList;
+    });
+    showToast(`Batch updated ${updates.length} sewing thread item(s)!`, "success");
 
-      showToast(`Batch updated ${updates.length} sewing thread item(s)!`, "success");
+    // 2. Parallel Supabase sync with timeout
+    try {
+      await Promise.allSettled(
+        updates.map(update =>
+          withTimeout(
+            supabase
+              .from('sewing_thread')
+              .update({
+                receive_qty: update.receive_qty,
+                receive_date: update.receive_date,
+                rcvd_date: update.receive_date,
+                receive_challan: update.receive_challan,
+                rcvd_challan: update.receive_challan,
+                issue_qty: update.issue_qty,
+                issue_date: update.issue_date,
+                issue_challan: update.issue_challan,
+                balance_qty: update.balance_qty,
+                remarks: update.remarks
+              })
+              .eq('id', update.id),
+            3500
+          )
+        )
+      );
     } catch (err) {
-      console.error("Error saving sewing quick updates:", err);
-      showToast("Failed to apply sewing thread batch updates", "error");
+      console.warn("Notice saving sewing thread quick updates:", err);
     }
   };
 
