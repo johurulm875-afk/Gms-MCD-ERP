@@ -156,7 +156,17 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
             body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf' })
           });
 
-          const data = await res.json();
+          const rawText = await res.text();
+          let data: any = {};
+          try {
+            data = JSON.parse(rawText);
+          } catch (e) {
+            if (rawText.startsWith('<') || rawText.includes('<html>')) {
+              throw new Error("Server returned HTML instead of JSON. The PDF file may be too large or server is restarting. Please try again.");
+            }
+            throw new Error("Unexpected server response format. Please try again.");
+          }
+
           if (!res.ok || !data.success) {
             throw new Error(data.error || 'Failed to extract PDF data.');
           }
@@ -573,21 +583,24 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
 
                 {/* Extracted Line Items List */}
                 <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                  {extractedItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-xs bg-slate-800/80 p-2 rounded border border-slate-700">
-                      <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">
-                          {idx + 1}
-                        </span>
-                        <span className="font-bold uppercase text-white">{item.colour || item.color}</span>
-                        {item.count && <span className="text-[11px] text-slate-400">({item.count})</span>}
-                        {item.pantone && <span className="text-[11px] font-mono text-emerald-300">{item.pantone}</span>}
+                  {extractedItems.map((item, idx) => {
+                    const cleanQty = Math.round(((Number(item.booking_qty) || 0) + Number.EPSILON) * 100) / 100;
+                    return (
+                      <div key={idx} className="flex items-center justify-between text-xs bg-slate-800/80 p-2 rounded border border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">
+                            {idx + 1}
+                          </span>
+                          <span className="font-bold uppercase text-white">{item.colour || item.color}</span>
+                          {item.count && <span className="text-[11px] text-slate-400">({item.count})</span>}
+                          {item.pantone && <span className="text-[11px] font-mono text-emerald-300">{item.pantone}</span>}
+                        </div>
+                        <div className="font-extrabold text-amber-300 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-500/30">
+                          {cleanQty} Cone/Yds
+                        </div>
                       </div>
-                      <div className="font-extrabold text-amber-300 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-500/30">
-                        {item.booking_qty} Cone/Yds
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

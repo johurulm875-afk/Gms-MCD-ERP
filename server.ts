@@ -10,8 +10,8 @@ const app = express();
 const PORT = 3000;
 
 // Increase body parser limit for base64 PDF uploads
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // Initialize GoogleGenAI client lazily on the server
 function getGenAIClient(): GoogleGenAI {
@@ -37,10 +37,11 @@ app.get('/api/health', (req, res) => {
 // Endpoint: Extract Sewing Thread Booking Report from PDF
 app.post('/api/extract-sewing-thread-pdf', async (req, res) => {
   try {
-    const { pdfBase64, mimeType = 'application/pdf' } = req.body;
+    const { pdfBase64, mimeType = 'application/pdf' } = req.body || {};
 
     if (!pdfBase64) {
       return res.status(400).json({
+        success: false,
         error: 'Missing pdfBase64 data in request body.'
       });
     }
@@ -85,56 +86,91 @@ Map the extracted data EXACTLY into the following JSON schema matching the Supab
 ### Execution:
 Analyze the input PDF thoroughly across all pages, create a record for each item row, and return the complete JSON Array.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: cleanBase64
-          }
-        },
-        {
-          text: promptText
-        }
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              buyer: { type: Type.STRING },
-              job_no: { type: Type.STRING },
-              style: { type: Type.STRING },
-              order_no: { type: Type.STRING },
-              sr_gt: { type: Type.STRING },
-              s_thread_ref: { type: Type.STRING },
-              count: { type: Type.STRING },
-              meter: { type: Type.STRING },
-              per_body_consm: { type: Type.NUMBER },
-              colour: { type: Type.STRING },
-              pantone: { type: Type.STRING },
-              booking_qty: { type: Type.NUMBER },
-              rcvd_date: { type: Type.STRING },
-              rcvd_challan: { type: Type.STRING },
-              receive_qty: { type: Type.NUMBER },
-              issue_date: { type: Type.STRING },
-              issue_challan: { type: Type.STRING },
-              issue_qty: { type: Type.NUMBER },
-              balance_qty: { type: Type.NUMBER },
-              supplier: { type: Type.STRING },
-              qc_not_ok: { type: Type.BOOLEAN },
-              remarks: { type: Type.STRING }
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+    let response: any = null;
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: cleanBase64
+              }
+            },
+            {
+              text: promptText
+            }
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  buyer: { type: Type.STRING },
+                  job_no: { type: Type.STRING },
+                  style: { type: Type.STRING },
+                  order_no: { type: Type.STRING },
+                  sr_gt: { type: Type.STRING },
+                  s_thread_ref: { type: Type.STRING },
+                  count: { type: Type.STRING },
+                  meter: { type: Type.STRING },
+                  per_body_consm: { type: Type.NUMBER },
+                  colour: { type: Type.STRING },
+                  pantone: { type: Type.STRING },
+                  booking_qty: { type: Type.NUMBER },
+                  rcvd_date: { type: Type.STRING },
+                  rcvd_challan: { type: Type.STRING },
+                  receive_qty: { type: Type.NUMBER },
+                  issue_date: { type: Type.STRING },
+                  issue_challan: { type: Type.STRING },
+                  issue_qty: { type: Type.NUMBER },
+                  balance_qty: { type: Type.NUMBER },
+                  supplier: { type: Type.STRING },
+                  qc_not_ok: { type: Type.BOOLEAN },
+                  remarks: { type: Type.STRING }
+                }
+              }
             }
           }
+        });
+
+        if (response && response.text) {
+          break; // Successfully generated!
         }
+      } catch (err: any) {
+        console.warn(`Model ${modelName} failed or busy (${err?.message || err}), trying fallback model...`);
+        lastError = err;
       }
-    });
+    }
+
+    if (!response || !response.text) {
+      throw lastError || new Error("Failed to extract PDF data: AI models are currently busy. Please try again in a moment.");
+    }
 
     const textOutput = response.text || '[]';
-    const parsedData = JSON.parse(textOutput);
+    let parsedData: any[] = [];
+    try {
+      parsedData = JSON.parse(textOutput);
+      if (Array.isArray(parsedData)) {
+        parsedData = parsedData.map((item: any) => {
+          const rawBQty = Number(item.booking_qty) || 0;
+          const cleanBQty = Math.round((rawBQty + Number.EPSILON) * 100) / 100;
+          return {
+            ...item,
+            booking_qty: cleanBQty,
+            balance_qty: cleanBQty
+          };
+        });
+      }
+    } catch (parseErr) {
+      console.warn("Failed to parse Gemini output directly:", textOutput);
+    }
 
     return res.json({
       success: true,
@@ -144,6 +180,7 @@ Analyze the input PDF thoroughly across all pages, create a record for each item
   } catch (error: any) {
     console.error("Error in /api/extract-sewing-thread-pdf:", error);
     return res.status(500).json({
+      success: false,
       error: error?.message || 'Failed to extract PDF data using Gemini AI.'
     });
   }
@@ -164,6 +201,15 @@ async function setupServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Global Error Handler for Express to ensure all error responses are JSON
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Global Express Error Handler:", err);
+    res.status(err.status || 500).json({
+      success: false,
+      error: err.message || 'Internal Server Error'
+    });
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running at http://localhost:${PORT}`);
