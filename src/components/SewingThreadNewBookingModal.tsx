@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { SewingThreadItem } from '../types';
-import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle, Upload, FileText, Loader2, ArrowRight } from 'lucide-react';
 
 interface SewingThreadNewBookingModalProps {
   isOpen: boolean;
@@ -79,6 +79,13 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [savedCount, setSavedCount] = useState(1);
 
+  // AI PDF Extractor state
+  const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [extractedItems, setExtractedItems] = useState<any[] | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const doResetForm = () => {
     setFormData({
       buyer_name: existingBuyers[0] || 'Stanley Stella',
@@ -121,6 +128,173 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
     ]);
     setCustomBuyer('');
     setUseCustomBuyer(false);
+    setExtractedItems(null);
+    setPdfFileName(null);
+    setPdfError(null);
+  };
+
+  const handlePdfUpload = async (file: File) => {
+    if (!file) return;
+    if (!file.type.includes('pdf') && !file.name.endsWith('.pdf')) {
+      setPdfError("Please select a valid PDF Work Order / Booking Report file.");
+      return;
+    }
+
+    setIsAnalyzingPdf(true);
+    setPdfError(null);
+    setExtractedItems(null);
+    setPdfFileName(file.name);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64Data = reader.result as string;
+          const res = await fetch('/api/extract-sewing-thread-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf' })
+          });
+
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to extract PDF data.');
+          }
+
+          if (!Array.isArray(data.data) || data.data.length === 0) {
+            setPdfError("No thread booking rows could be extracted from this PDF. Please check the document format.");
+          } else {
+            setExtractedItems(data.data);
+          }
+        } catch (err: any) {
+          console.error("PDF Extraction Error:", err);
+          setPdfError(err.message || "An error occurred while parsing PDF.");
+        } finally {
+          setIsAnalyzingPdf(false);
+        }
+      };
+
+      reader.onerror = () => {
+        setPdfError("Failed to read PDF file.");
+        setIsAnalyzingPdf(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setPdfError(err.message || "Unexpected upload error.");
+      setIsAnalyzingPdf(false);
+    }
+  };
+
+  const applyExtractedToForm = () => {
+    if (!extractedItems || extractedItems.length === 0) return;
+    const headerItem = extractedItems[0];
+
+    const extractedBuyer = headerItem.buyer || headerItem.buyer_name || '';
+    if (extractedBuyer) {
+      if (!existingBuyers.includes(extractedBuyer)) {
+        setUseCustomBuyer(true);
+        setCustomBuyer(extractedBuyer);
+      } else {
+        setUseCustomBuyer(false);
+      }
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      buyer: extractedBuyer || prev.buyer,
+      buyer_name: extractedBuyer || prev.buyer_name,
+      job_no: headerItem.job_no || prev.job_no,
+      style: headerItem.style || prev.style,
+      order_no: headerItem.order_no || prev.order_no,
+      sr_gt: headerItem.sr_gt || prev.sr_gt,
+      store_ref: headerItem.s_thread_ref || headerItem.store_ref || prev.store_ref,
+      s_thread_ref: headerItem.s_thread_ref || headerItem.store_ref || prev.s_thread_ref,
+      supplier: headerItem.supplier || prev.supplier,
+      thread_count: headerItem.count || headerItem.thread_count || prev.thread_count,
+      count: headerItem.count || headerItem.thread_count || prev.count,
+      meter: headerItem.meter ? String(headerItem.meter) : prev.meter,
+      per_body_consm: headerItem.per_body_consm != null ? String(headerItem.per_body_consm) : prev.per_body_consm,
+      remarks: headerItem.remarks || prev.remarks
+    }));
+
+    const rows: ThreadColourRow[] = extractedItems.map((item, idx) => ({
+      id: String(idx + 1) + Date.now(),
+      colour: (item.colour || item.color || '').toUpperCase(),
+      thread_count: item.count || item.thread_count || headerItem.count || '40/2',
+      shade_no: item.pantone || item.shade_no || '',
+      booking_qty: Number(item.booking_qty) || 0
+    }));
+
+    setColourRows(rows);
+    setExtractedItems(null);
+  };
+
+  const saveExtractedDirectly = async () => {
+    if (!extractedItems || extractedItems.length === 0) return;
+    try {
+      setIsSubmitting(true);
+      const itemsToInsert: Omit<SewingThreadItem, 'id'>[] = extractedItems.map(item => {
+        const bQty = Number(item.booking_qty) || 0;
+        const bName = item.buyer || item.buyer_name || formData.buyer_name || 'General Buyer';
+        const stRef = item.s_thread_ref || item.store_ref || formData.store_ref || 'GMST-ST-26-001';
+        const col = (item.colour || item.color || '').toUpperCase();
+        const tCount = item.count || item.thread_count || '40/2';
+        const sNo = item.pantone || item.shade_no || '';
+
+        return {
+          buyer: bName,
+          buyer_name: bName,
+          date: getTodayFormatted(),
+          booking_challan: '',
+          style: item.style || '',
+          order_no: item.order_no || '',
+          sr_gt: item.sr_gt || '',
+          store_ref: stRef,
+          s_thread_ref: stRef,
+          job_no: item.job_no || '',
+          colour: col,
+          color: col,
+          item_name: 'Spun Polyester Thread',
+          count: tCount,
+          thread_count: tCount,
+          shade_no: sNo,
+          pantone: sNo,
+          meter: item.meter ? String(item.meter) : '5000M',
+          per_body_consm: item.per_body_consm != null ? String(item.per_body_consm) : '',
+          supplier: item.supplier || '',
+          qc_not_ok: false,
+          booking_qty: bQty,
+          receive_qty: 0,
+          rcvd_date: '',
+          receive_date: '',
+          rcvd_challan: '',
+          receive_challan: '',
+          issue_qty: 0,
+          issue_date: '',
+          issue_challan: '',
+          balance_qty: bQty,
+          remarks: item.remarks || '',
+          receive_logs: [],
+          issue_logs: []
+        };
+      });
+
+      await onAddBooking(itemsToInsert.length === 1 ? itemsToInsert[0] : itemsToInsert);
+      setSavedCount(itemsToInsert.length);
+      setShowSuccessPopup(true);
+      doResetForm();
+
+      setTimeout(() => {
+        setShowSuccessPopup(false);
+        onClose();
+      }, 1200);
+
+    } catch (err) {
+      console.error("Error direct importing extracted items:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAddColourRow = () => {
@@ -296,6 +470,129 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
           
+          {/* SECTION 0: AI PDF Work Order Extractor */}
+          <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-indigo-950 to-emerald-950 text-white border border-indigo-800/80 shadow-md space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <Sparkles className="w-5 h-5 text-emerald-400 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold flex items-center gap-2 text-white">
+                    <span>AI PDF Work Order Extractor</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/30 text-emerald-300 border border-emerald-400/30">
+                      Gemini 3.6 Flash
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Upload Garments Sewing Thread Booking PDF to extract all line items automatically
+                  </p>
+                </div>
+              </div>
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handlePdfUpload(file);
+                }}
+              />
+
+              <button
+                type="button"
+                disabled={isAnalyzingPdf}
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                {isAnalyzingPdf ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Analyzing PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    <span>Upload PDF Booking</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {pdfError && (
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-xs text-rose-200 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{pdfError}</span>
+              </div>
+            )}
+
+            {/* AI Extraction Results Preview Banner */}
+            {extractedItems && extractedItems.length > 0 && (
+              <div className="mt-3 p-4 bg-slate-900/90 border border-emerald-500/50 rounded-xl space-y-3 animate-in fade-in zoom-in-95">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    <div>
+                      <span className="text-xs font-bold text-white">
+                        Extracted {extractedItems.length} Thread Booking Item(s)
+                      </span>
+                      {pdfFileName && <span className="text-[11px] text-slate-400 ml-2">({pdfFileName})</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={applyExtractedToForm}
+                      className="px-3 py-1.5 text-xs font-bold text-emerald-300 bg-emerald-950 hover:bg-emerald-900 border border-emerald-600/50 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <ArrowRight className="w-3.5 h-3.5" />
+                      Populate Form Below
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={saveExtractedDirectly}
+                      className="px-3.5 py-1.5 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg flex items-center gap-1.5 shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      Directly Import & Save All ({extractedItems.length})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Header Summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] bg-slate-950/80 p-2.5 rounded-lg border border-slate-800 text-slate-300">
+                  <div><span className="text-slate-500">Buyer:</span> <strong className="text-emerald-300">{extractedItems[0]?.buyer || extractedItems[0]?.buyer_name || 'N/A'}</strong></div>
+                  <div><span className="text-slate-500">Job No:</span> <strong className="text-white">{extractedItems[0]?.job_no || 'N/A'}</strong></div>
+                  <div><span className="text-slate-500">Style:</span> <strong className="text-white">{extractedItems[0]?.style || 'N/A'}</strong></div>
+                  <div><span className="text-slate-500">Order/PO:</span> <strong className="text-white">{extractedItems[0]?.order_no || 'N/A'}</strong></div>
+                </div>
+
+                {/* Extracted Line Items List */}
+                <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                  {extractedItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs bg-slate-800/80 p-2 rounded border border-slate-700">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">
+                          {idx + 1}
+                        </span>
+                        <span className="font-bold uppercase text-white">{item.colour || item.color}</span>
+                        {item.count && <span className="text-[11px] text-slate-400">({item.count})</span>}
+                        {item.pantone && <span className="text-[11px] font-mono text-emerald-300">{item.pantone}</span>}
+                      </div>
+                      <div className="font-extrabold text-amber-300 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-500/30">
+                        {item.booking_qty} Cone/Yds
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* SECTION 1: Buyer & Order Identification */}
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">

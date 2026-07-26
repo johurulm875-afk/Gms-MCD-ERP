@@ -543,13 +543,24 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
           </button>
 
           {isEditable && (
-            <button
-              onClick={() => setIsNewBookingOpen(true)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ New Thread Booking</span>
-            </button>
+            <>
+              <button
+                onClick={() => setIsNewBookingOpen(true)}
+                className="px-3.5 py-2 bg-gradient-to-r from-slate-900 to-indigo-950 hover:from-slate-800 hover:to-indigo-900 text-emerald-400 border border-emerald-500/40 text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+                title="Upload PDF Work Order to auto-extract with Gemini AI"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+                <span>AI PDF Extractor</span>
+              </button>
+
+              <button
+                onClick={() => setIsNewBookingOpen(true)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ New Thread Booking</span>
+              </button>
+            </>
           )}
         </div>
 
