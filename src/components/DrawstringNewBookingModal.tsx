@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { DrawstringItem } from '../types';
-import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2 } from 'lucide-react';
+import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, Upload, FileText, Loader2, ArrowRight, Key, AlertTriangle } from 'lucide-react';
+import { extractPdfClientSide } from '../utils/clientGeminiExtractor';
 
 interface DrawstringNewBookingModalProps {
   isOpen: boolean;
@@ -50,6 +51,15 @@ export const DrawstringNewBookingModal: React.FC<DrawstringNewBookingModalProps>
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [savedCount, setSavedCount] = useState(1);
 
+  // PDF Extraction States
+  const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [extractedItems, setExtractedItems] = useState<any[] | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string | null>(null);
+  const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
+  const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const resetForm = () => {
     setHeaderData({
       buyer: existingBuyers[0] || 'STANLEY STELLA',
@@ -64,6 +74,189 @@ export const DrawstringNewBookingModal: React.FC<DrawstringNewBookingModalProps>
     ]);
     setCustomBuyer('');
     setUseCustomBuyer(false);
+    setExtractedItems(null);
+    setPdfError(null);
+    setPdfFileName(null);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
+      setPdfError("Please select a valid PDF Work Order / Booking Report file.");
+      return;
+    }
+
+    setIsAnalyzingPdf(true);
+    setPdfError(null);
+    setExtractedItems(null);
+    setPdfFileName(file.name);
+
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        try {
+          const base64Data = reader.result as string;
+          let items: any[] = [];
+          let isBackendSuccess = false;
+
+          // 1. First try backend Express API
+          try {
+            const res = await fetch('/api/extract-sewing-thread-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf' })
+            });
+
+            const rawText = await res.text();
+            if (res.ok && rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
+              const data = JSON.parse(rawText);
+              if (data.success && Array.isArray(data.data)) {
+                items = data.data;
+                isBackendSuccess = true;
+              }
+            }
+          } catch (backendErr) {
+            console.warn("Backend API not reachable, falling back to client-side extraction:", backendErr);
+          }
+
+          // 2. Fallback to client-side Gemini extraction
+          if (!isBackendSuccess) {
+            console.log("Using Client-Side Gemini Extraction...");
+            items = await extractPdfClientSide(base64Data, 'application/pdf', userApiKey);
+          }
+
+          if (!Array.isArray(items) || items.length === 0) {
+            setPdfError("No drawstring booking rows could be extracted from this PDF. Please check the document format.");
+          } else {
+            setExtractedItems(items);
+          }
+        } catch (err: any) {
+          console.error("PDF Extraction Error:", err);
+          if (err.message?.includes("Gemini API Key")) {
+            setShowApiKeyInput(true);
+          }
+          setPdfError(err.message || "An error occurred while parsing PDF.");
+        } finally {
+          setIsAnalyzingPdf(false);
+        }
+      };
+    } catch (err: any) {
+      setPdfError(err.message || "Failed to read PDF file.");
+      setIsAnalyzingPdf(false);
+    }
+
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const populateFormFromPdf = () => {
+    if (!extractedItems || extractedItems.length === 0) return;
+    const headerItem = extractedItems[0];
+
+    const extractedBuyer = headerItem.buyer || headerItem.buyer_name || '';
+    if (extractedBuyer) {
+      if (!existingBuyers.includes(extractedBuyer)) {
+        setUseCustomBuyer(true);
+        setCustomBuyer(extractedBuyer);
+      } else {
+        setUseCustomBuyer(false);
+      }
+    }
+
+    setHeaderData(prev => ({
+      ...prev,
+      buyer: extractedBuyer || prev.buyer,
+      booking_date: headerItem.booking_date || headerItem.date || prev.booking_date || getTodayFormatted(),
+      ref_no_job_no: headerItem.job_no || headerItem.ref_no_job_no || prev.ref_no_job_no,
+      sr_gt_no: headerItem.sr_gt || headerItem.sr_gt_no || prev.sr_gt_no,
+      po_no: headerItem.order_no || headerItem.po_no || prev.po_no,
+      remarks: headerItem.remarks || prev.remarks
+    }));
+
+    const rows: DrawstringVariantRow[] = extractedItems.map((item, idx) => ({
+      id: `${Date.now()}-${idx}`,
+      item_name: (item.count || item.item_name || 'DRAWSTRING').toString().toUpperCase(),
+      color: (item.colour || item.color || '').toString().toUpperCase(),
+      size: (item.meter || item.pantone || item.size || '114 CM').toString().toUpperCase(),
+      booking_qty: Number(item.booking_qty) || ''
+    }));
+
+    setVariantRows(rows);
+  };
+
+  const handleDirectImportAll = async () => {
+    if (!extractedItems || extractedItems.length === 0) return;
+
+    try {
+      setIsSubmitting(true);
+
+      const itemsToInsert: Omit<DrawstringItem, 'id'>[] = extractedItems.map(item => {
+        const finalBuyer = (item.buyer || item.buyer_name || headerData.buyer || 'STANLEY STELLA').toString().toUpperCase();
+        const bQty = Number(item.booking_qty) || 0;
+        const colorName = (item.colour || item.color || 'STANDARD').toString().toUpperCase();
+        const itemName = (item.count || item.item_name || 'DRAWSTRING').toString().toUpperCase();
+        const sizeVal = (item.meter || item.pantone || item.size || '114 CM').toString().toUpperCase();
+        const jobNo = (item.job_no || item.ref_no_job_no || headerData.ref_no_job_no || 'DS-JOB').toString();
+        const srGt = (item.sr_gt || item.sr_gt_no || headerData.sr_gt_no || 'DS-SRGT').toString();
+        const poNo = (item.order_no || item.po_no || headerData.po_no || 'DS-PO').toString();
+
+        return {
+          buyer: finalBuyer,
+          buyer_name: finalBuyer,
+          booking_date: item.booking_date || headerData.booking_date || getTodayFormatted(),
+          date: item.booking_date || headerData.booking_date || getTodayFormatted(),
+          ref_no_job_no: jobNo,
+          style: item.style || jobNo || itemName,
+          sr_gt_no: srGt,
+          store_ref: item.s_thread_ref || srGt || 'DS-REF',
+          po_no: poNo,
+          order_no: poNo,
+          item_name: itemName,
+          drawstring_type: itemName,
+          color: colorName,
+          colour: colorName,
+          size: sizeVal,
+          size_mm: sizeVal,
+          unit: 'PCS',
+          booking_qty: bQty,
+          rcv_qty: 0,
+          receive_qty: 0,
+          due_qty: bQty,
+          balance_qty: bQty,
+          last_rcvd_qty: 0,
+          rcvd_date: item.rcvd_date || '',
+          receive_date: '',
+          receive_challan: '',
+          issue_qty: 0,
+          issue_date: '',
+          issue_challan: '',
+          remarks: item.remarks || '',
+          receive_logs: [],
+          issue_logs: []
+        };
+      });
+
+      await onAddBooking(itemsToInsert.length === 1 ? itemsToInsert[0] : itemsToInsert);
+
+      setSavedCount(itemsToInsert.length);
+      setShowSuccessPopup(true);
+
+      resetForm();
+
+      setTimeout(() => {
+        setShowSuccessPopup(false);
+        onClose();
+      }, 1300);
+
+    } catch (err) {
+      console.error("Error direct importing extracted drawstring items:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAddRow = () => {
@@ -215,6 +408,182 @@ export const DrawstringNewBookingModal: React.FC<DrawstringNewBookingModalProps>
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+          
+          {/* AI PDF EXTRACTOR BOX */}
+          <div className="p-4 rounded-xl bg-slate-900 border border-teal-500/40 text-white space-y-3 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-teal-500/20 text-teal-400 border border-teal-500/30">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-teal-300 flex items-center gap-1.5">
+                    <span>PDF Booking Auto Extractor (Gemini AI)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 font-mono">
+                      Supabase Schema
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Upload Garments Drawstring Booking PDF to extract all line items automatically
+                  </p>
+                </div>
+              </div>
+
+              {/* Upload & API Key Action Buttons */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="application/pdf,.pdf"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeyInput(prev => !prev)}
+                  title="Configure Gemini API Key for Client-side / Static Hosting"
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors cursor-pointer"
+                >
+                  <Key className="w-4 h-4 text-teal-400" />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isAnalyzingPdf}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {isAnalyzingPdf ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Analyzing PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      <span>Upload PDF Booking</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Optional Gemini API Key Input */}
+            {showApiKeyInput && (
+              <div className="p-3 bg-slate-950 border border-teal-500/40 rounded-xl space-y-2 text-xs">
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="font-bold text-teal-300 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-teal-400" />
+                    <span>Client-Side Gemini API Key (For Static / GitHub Pages)</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    Saved in browser localStorage
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    placeholder="Enter Gemini API Key (e.g. AIzaSy...)"
+                    value={userApiKey}
+                    onChange={(e) => {
+                      setUserApiKey(e.target.value);
+                      localStorage.setItem('gemini_api_key', e.target.value);
+                    }}
+                    className="flex-1 bg-slate-900 border border-slate-800 focus:border-teal-500 rounded-lg px-3 py-1.5 text-white font-mono text-xs outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem('gemini_api_key', userApiKey);
+                      setShowApiKeyInput(false);
+                    }}
+                    className="px-3 py-1.5 bg-teal-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-teal-400 transition-colors cursor-pointer"
+                  >
+                    Save Key
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {pdfError && (
+              <div className="p-3 rounded-xl bg-red-950/80 border border-red-500/50 text-red-200 text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-bold">{pdfError}</p>
+                  <p className="text-[11px] text-red-300/80 mt-0.5">
+                    Try uploading a clear Work Order PDF or enter your Gemini API Key if using static hosting.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Extracted Data Result Banner */}
+            {extractedItems && extractedItems.length > 0 && (
+              <div className="p-3.5 bg-teal-950/90 border border-teal-400/50 rounded-xl space-y-3 animate-in fade-in duration-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-800/80 pb-2">
+                  <div>
+                    <span className="text-xs font-black text-teal-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-teal-400" />
+                      <span>Extracted {extractedItems.length} Drawstring Booking Item(s)</span>
+                    </span>
+                    <p className="text-[11px] text-teal-200/80">
+                      File: {pdfFileName || 'Uploaded Document'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={populateFormFromPdf}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-teal-300 font-bold text-xs rounded-lg border border-teal-500/40 flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      <span>Populate Form Below</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={handleDirectImportAll}
+                      className="px-3 py-1.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-lg shadow-md flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Directly Import & Save All ({extractedItems.length})</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preview Metadata */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] bg-slate-900/80 p-2.5 rounded-lg border border-slate-800">
+                  <div><span className="text-slate-400">Buyer:</span> <strong className="text-teal-300">{extractedItems[0]?.buyer || extractedItems[0]?.buyer_name || 'N/A'}</strong></div>
+                  <div><span className="text-slate-400">Job No:</span> <strong className="text-white">{extractedItems[0]?.job_no || extractedItems[0]?.ref_no_job_no || 'N/A'}</strong></div>
+                  <div><span className="text-slate-400">SR/GT No:</span> <strong className="text-white">{extractedItems[0]?.sr_gt || extractedItems[0]?.sr_gt_no || 'N/A'}</strong></div>
+                  <div><span className="text-slate-400">PO No:</span> <strong className="text-white">{extractedItems[0]?.order_no || extractedItems[0]?.po_no || 'N/A'}</strong></div>
+                </div>
+
+                {/* Extracted Item List Preview */}
+                <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                  {extractedItems.map((item, idx) => (
+                    <div key={idx} className="text-[11px] bg-slate-900/60 px-2.5 py-1.5 rounded flex items-center justify-between border border-slate-800">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-mono text-teal-400">#{idx + 1}</span>
+                        <span className="font-bold text-white uppercase">{item.count || item.item_name || 'DRAWSTRING'}</span>
+                        <span className="text-slate-400">|</span>
+                        <span className="font-bold text-amber-300">{item.colour || item.color}</span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-slate-300">{item.meter || item.size || '114 CM'}</span>
+                      </div>
+                      <span className="font-extrabold text-teal-300 shrink-0 ml-2">
+                        {item.booking_qty} PCS
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           
           {/* SECTION 1: Header / Reference Details */}
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">

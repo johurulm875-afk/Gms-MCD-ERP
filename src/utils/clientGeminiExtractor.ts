@@ -25,33 +25,39 @@ export async function extractPdfClientSide(
   }
 
   const promptText = `
-You are an expert Garments Sewing Thread Work Order & Booking PDF Parser AI.
-Extract all sewing thread booking line items from the provided PDF document.
+You are an expert Data Extraction AI for Garments Drawstring Booking Reports.
+Your task is to analyze the uploaded PDF Work Order / Booking Report and extract every single drawstring booking line item.
+Map the extracted data EXACTLY into the JSON schema matching the Supabase table structure (\`supabase_drawstring_all_rows\`).
 
-### Required Fields for each item:
-1. buyer: Buyer / Brand Name (e.g., Loomlink Aps, H&M, Zara)
-2. job_no: Job Number / Work Order No (e.g., GMST-26-01688)
-3. style: Style Name / Description (e.g., BET100724 - BOX FIT T-SHIRT)
-4. order_no: Order / PO Number (e.g., 202659)
-5. sr_gt: SR / GT Reference Number (e.g., GMST-FB-26-01447)
-6. s_thread_ref: Sewing Thread Store Reference Key (e.g., GMST-TB-26-00831)
-7. count: Thread Count / Ticket / Spec (e.g., 100 % Spun Polyester Sewing Thread 40/2)
-8. meter: Meter or Cone length (e.g., 2000)
-9. per_body_consm: Per Body Consumption (Number)
-10. colour: Thread Colour Name (e.g., BLACK, NAVY, WHITE)
-11. pantone: Pantone Code / Shade No (e.g., BET BLACK, 19-4005 TCX)
-12. booking_qty: Booking Quantity in Cones or Yds (Number). Must be a clean number!
-13. rcvd_date: Received Date if present
-14. rcvd_challan: Received Challan No
-15. receive_qty: Received Quantity (Number)
-16. issue_date: Issue Date
-17. issue_challan: Issue Challan No
-18. issue_qty: Issued Quantity (Number)
-19. balance_qty: Balance Quantity (Number)
-20. supplier: Thread Supplier / Factory Name (e.g., Gms Yarn Dyeing)
-21. qc_not_ok: QC Status boolean (false = QC OK, true = QC NOT OK)
-22. remarks: Any extra remarks
+### Output Schema Rules:
+- Return ONLY a valid JSON Array of objects. Do not wrap in extra markdown or plain text explanations.
+- Extract each row representing an individual drawstring color/size/quantity booking.
 
+### JSON Fields to extract per line item:
+1. "buyer": String (Buyer Name from Header, e.g. "Bestseller A/S")
+2. "job_no": String (Job No, e.g. "GMST-26-01543")
+3. "style": String (Combine Style Ref and Style Desc, e.g. "12137054 - JJECORP OLD LOGO SWEAT HOOD NOOS")
+4. "order_no": String (PO No, e.g. "GMT4728405")
+5. "sr_gt": String (Fabric Booking No, e.g. "GMST-FB-26-01361")
+6. "s_thread_ref": String (Trims / Drawstring Booking No, e.g. "GMST-TB-26-00782")
+7. "count": String (Item Description / Specification, e.g. "1 cm cotton Flat drawstring with Plastic tips Length 120 Cm")
+8. "meter": String or null (Item Size / Finish Length, e.g. "120 CM" or "118 CM")
+9. "per_body_consm": Number or null (Cost/Dzn Rate or Consumption rate)
+10. "colour": String (Item Color / Garment Color, e.g. "LIGHT GREY MELANGE")
+11. "pantone": String or null (Pantone code or Garment Size if specified, e.g. "XS", "S", "M")
+12. "booking_qty": Number (WO Qty / Order Quantity)
+13. "rcvd_date": null
+14. "rcvd_challan": null
+15. "receive_qty": 0
+16. "issue_date": null
+17. "issue_challan": null
+18. "issue_qty": 0
+19. "balance_qty": Number (Same value as "booking_qty")
+20. "supplier": String (Supplier Name from Header, e.g. "Gms Trims Limited")
+21. "qc_not_ok": null
+22. "remarks": String or null (Line remarks if present)
+
+### Execution:
 Analyze the input PDF thoroughly across all pages, create a record for each item row, and return the complete JSON Array.
 `;
 

@@ -51,27 +51,27 @@ app.post('/api/extract-sewing-thread-pdf', async (req, res) => {
 
     const ai = getGenAIClient();
 
-    const promptText = `You are an expert Data Extraction AI for Garments Sewing Thread Booking Reports.
-Your task is to analyze the uploaded PDF Work Order / Booking Report and extract every thread booking line item.
-Map the extracted data EXACTLY into the following JSON schema matching the Supabase table structure (\`supabase_sewing_thread_all_rows\`):
+    const promptText = `You are an expert Data Extraction AI for Garments Drawstring Booking Reports.
+Your task is to analyze the uploaded PDF Work Order / Booking Report and extract every single drawstring booking line item.
+Map the extracted data EXACTLY into the JSON schema matching the Supabase table structure (\`supabase_drawstring_all_rows\`).
 
 ### Output Schema Rules:
 - Return ONLY a valid JSON Array of objects. Do not wrap in extra markdown or plain text explanations.
-- Extract each row representing an individual sewing thread color/quantity booking.
+- Extract each row representing an individual drawstring color/size/quantity booking.
 
 ### JSON Fields to extract per line item:
 1. "buyer": String (Buyer Name from Header, e.g. "Bestseller A/S")
-2. "job_no": String (Job No, e.g. "GMST-26-01330")
-3. "style": String (Combine Style Ref and Style Desc, e.g. "12300670 - JJEACE SWEAT CREW NECK NOOS")
-4. "order_no": String (PO No, e.g. "GMT4693237")
-5. "sr_gt": String (Fabric Booking No, e.g. "GMST-FB-26-01173")
-6. "s_thread_ref": String (Trims Booking No, e.g. "GMST-TB-26-00641")
-7. "count": String (Item Description / Thread Specification, e.g. "50/2 100% Spun Polyester")
-8. "meter": String (Cone Length if available, e.g. "4000M")
-9. "per_body_consm": Number or null (Cost/Dzn or Consumption rate)
-10. "colour": String (Item Color / Garment Color, e.g. "TURBULENCE")
-11. "pantone": String or null (Pantone code if specified)
-12. "booking_qty": Number (WO Qty / Cone Quantity)
+2. "job_no": String (Job No, e.g. "GMST-26-01543")
+3. "style": String (Combine Style Ref and Style Desc, e.g. "12137054 - JJECORP OLD LOGO SWEAT HOOD NOOS")
+4. "order_no": String (PO No, e.g. "GMT4728405")
+5. "sr_gt": String (Fabric Booking No, e.g. "GMST-FB-26-01361")
+6. "s_thread_ref": String (Trims / Drawstring Booking No, e.g. "GMST-TB-26-00782")
+7. "count": String (Item Description / Specification, e.g. "1 cm cotton Flat drawstring with Plastic tips Length 120 Cm")
+8. "meter": String or null (Item Size / Finish Length, e.g. "120 CM" or "118 CM")
+9. "per_body_consm": Number or null (Cost/Dzn Rate or Consumption rate)
+10. "colour": String (Item Color / Garment Color, e.g. "LIGHT GREY MELANGE")
+11. "pantone": String or null (Pantone code or Garment Size if specified, e.g. "XS", "S", "M")
+12. "booking_qty": Number (WO Qty / Order Quantity)
 13. "rcvd_date": null
 14. "rcvd_challan": null
 15. "receive_qty": 0
@@ -79,7 +79,7 @@ Map the extracted data EXACTLY into the following JSON schema matching the Supab
 17. "issue_challan": null
 18. "issue_qty": 0
 19. "balance_qty": Number (Same value as "booking_qty")
-20. "supplier": String (Supplier Name from Header)
+20. "supplier": String (Supplier Name from Header, e.g. "Gms Trims Limited")
 21. "qc_not_ok": null
 22. "remarks": String or null (Line remarks if present)
 
