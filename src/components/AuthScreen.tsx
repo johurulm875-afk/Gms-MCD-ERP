@@ -28,6 +28,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [regSector, setRegSector] = useState<string>('GMS MCD Dept.');
   const [regRole, setRegRole] = useState<string>('USER');
 
+  const getSavedAvatarOrProfile = (username: string, defaultAvatar: string) => {
+    const norm = username.toLowerCase();
+    const savedAvatar = localStorage.getItem('erp_avatar_' + norm) || 
+                        localStorage.getItem('erp_avatar_johurul') || 
+                        localStorage.getItem('erp_avatar_admin@gms.com');
+    if (savedAvatar) return savedAvatar;
+
+    const savedProfileStr = localStorage.getItem('erp_saved_profile_' + norm);
+    if (savedProfileStr) {
+      try {
+        const parsed = JSON.parse(savedProfileStr);
+        if (parsed.avatar_url) return parsed.avatar_url;
+      } catch (e) {}
+    }
+    return defaultAvatar;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -50,7 +67,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           designation: 'System Administrator & Developer',
           id_card_no: 'Tst-1024',
           sector: 'GMS MCD & ACC. Dept.',
-          avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          avatar_url: getSavedAvatarOrProfile('admin@gms.com', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'),
           role: 'ADMINISTRATOR'
         };
         onLoginSuccess(adminUser);
@@ -70,6 +87,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           designation: 'MCD Assistant Manager',
           id_card_no: 'SUB-2041',
           sector: 'GMS MCD Dept.',
+          avatar_url: getSavedAvatarOrProfile('subadmin@gms.com', ''),
           role: 'SUB_ADMIN'
         };
         onLoginSuccess(subAdminUser);
@@ -89,6 +107,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           designation: 'MCD Store Operator',
           id_card_no: 'EMP-2041',
           sector: 'Accessories Store',
+          avatar_url: getSavedAvatarOrProfile('user@gms.com', ''),
           role: 'USER'
         };
         onLoginSuccess(standardUser);

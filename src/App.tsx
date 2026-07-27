@@ -60,6 +60,16 @@ export default function App() {
           parsed.sector = 'GMS MCD & ACC. Dept.';
           parsed.id_card_no = 'Tst-1024';
         }
+
+        // Restore permanent avatar if saved
+        const normUser = (parsed.username || '').toLowerCase();
+        const savedAvatar = localStorage.getItem('erp_avatar_' + normUser) ||
+                            localStorage.getItem('erp_avatar_admin@gms.com') ||
+                            localStorage.getItem('erp_avatar_johurul');
+        if (savedAvatar) {
+          parsed.avatar_url = savedAvatar;
+        }
+
         return parsed;
       } catch (e) { return null; }
     }
