@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { SewingThreadItem } from '../types';
-import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle, Upload, FileText, Loader2, ArrowRight } from 'lucide-react';
+import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle, Upload, FileText, Loader2, ArrowRight, Key } from 'lucide-react';
+import { extractPdfClientSide } from '../utils/clientGeminiExtractor';
 
 interface SewingThreadNewBookingModalProps {
   isOpen: boolean;
@@ -84,6 +85,8 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [extractedItems, setExtractedItems] = useState<any[] | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
+  const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
+  const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const doResetForm = () => {
@@ -150,34 +153,45 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
       reader.onload = async () => {
         try {
           const base64Data = reader.result as string;
-          const res = await fetch('/api/extract-sewing-thread-pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf' })
-          });
+          let items: any[] = [];
+          let isBackendSuccess = false;
 
-          const rawText = await res.text();
-          let data: any = {};
+          // 1. First try backend Express API
           try {
-            data = JSON.parse(rawText);
-          } catch (e) {
-            if (rawText.startsWith('<') || rawText.includes('<html>')) {
-              throw new Error("Server returned HTML instead of JSON. The PDF file may be too large or server is restarting. Please try again.");
+            const res = await fetch('/api/extract-sewing-thread-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf' })
+            });
+
+            const rawText = await res.text();
+            if (res.ok && rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
+              const data = JSON.parse(rawText);
+              if (data.success && Array.isArray(data.data)) {
+                items = data.data;
+                isBackendSuccess = true;
+              }
             }
-            throw new Error("Unexpected server response format. Please try again.");
+          } catch (backendErr) {
+            console.warn("Backend API not reachable (GitHub Pages / static host), falling back to client-side extraction:", backendErr);
           }
 
-          if (!res.ok || !data.success) {
-            throw new Error(data.error || 'Failed to extract PDF data.');
+          // 2. If backend endpoint returned HTML/404 or failed (e.g. on GitHub Pages), fallback to client-side Gemini extraction
+          if (!isBackendSuccess) {
+            console.log("Using Client-Side Gemini Extraction for GitHub Pages static host...");
+            items = await extractPdfClientSide(base64Data, 'application/pdf', userApiKey);
           }
 
-          if (!Array.isArray(data.data) || data.data.length === 0) {
+          if (!Array.isArray(items) || items.length === 0) {
             setPdfError("No thread booking rows could be extracted from this PDF. Please check the document format.");
           } else {
-            setExtractedItems(data.data);
+            setExtractedItems(items);
           }
         } catch (err: any) {
           console.error("PDF Extraction Error:", err);
+          if (err.message?.includes("Gemini API Key")) {
+            setShowApiKeyInput(true);
+          }
           setPdfError(err.message || "An error occurred while parsing PDF.");
         } finally {
           setIsAnalyzingPdf(false);
@@ -511,25 +525,73 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                 }}
               />
 
-              <button
-                type="button"
-                disabled={isAnalyzingPdf}
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-              >
-                {isAnalyzingPdf ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>Analyzing PDF...</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    <span>Upload PDF Booking</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeyInput(prev => !prev)}
+                  title="Configure Gemini API Key for GitHub Pages / Static Hosting"
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors cursor-pointer"
+                >
+                  <Key className="w-4 h-4 text-emerald-400" />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isAnalyzingPdf}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {isAnalyzingPdf ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Analyzing PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      <span>Upload PDF Booking</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
+
+            {/* Optional Gemini API Key Input for GitHub Pages */}
+            {showApiKeyInput && (
+              <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-xl space-y-2 text-xs">
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>GitHub Pages / Client-Side Gemini API Key</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    Saved in browser localStorage
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    placeholder="Enter Gemini API Key (e.g. AIzaSy...)"
+                    value={userApiKey}
+                    onChange={(e) => {
+                      setUserApiKey(e.target.value);
+                      localStorage.setItem('gemini_api_key', e.target.value);
+                    }}
+                    className="flex-1 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-white font-mono text-xs outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem('gemini_api_key', userApiKey);
+                      setShowApiKeyInput(false);
+                    }}
+                    className="px-3 py-1.5 bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-emerald-400 transition-colors cursor-pointer"
+                  >
+                    Save Key
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Error Message */}
             {pdfError && (
