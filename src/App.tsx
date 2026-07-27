@@ -487,7 +487,7 @@ export default function App() {
   };
 
   // Helper to run promises with a strict timeout so UI never hangs
-  function withTimeout<T>(promiseLike: PromiseLike<T>, ms = 3500): Promise<T> {
+  function withTimeout<T>(promiseLike: PromiseLike<T>, ms = 2500): Promise<T> {
     let timeoutId: any;
     const timeoutPromise = new Promise<T>((_, reject) => {
       timeoutId = setTimeout(() => reject(new Error(`Database operation timed out after ${ms}ms`)), ms);
@@ -512,7 +512,7 @@ export default function App() {
           .select('*')
           .order('id', { ascending: false })
           .range(start, start + chunkSize - 1),
-        4000
+        2500
       );
 
       if (error) {
@@ -780,7 +780,7 @@ export default function App() {
         syncUnsyncedDrawstring(localItems);
       }
     } catch (err) {
-      console.error("Drawstring connection notice (using local state):", err);
+      console.warn("Drawstring connection notice (using local state):", err);
       if (localItems.length > 0) {
         setDrawstringItems(localItems);
       }
@@ -798,7 +798,7 @@ export default function App() {
     }
 
     try {
-      const records = await withTimeout(fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape'), 4000);
+      const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape');
       if (records && records.length > 0) {
         const mappedRecords: TwillTapeItem[] = records.map((r: any) => {
           const bName = r.buyer_name || r.buyer || 'GMS Buyer';
@@ -896,7 +896,7 @@ export default function App() {
         loadFallbackData();
       }
     } catch (err: any) {
-      console.error("Supabase connection error (using local state):", err);
+      console.warn("Supabase connection notice (using local state):", err?.message || err);
       if (localItems.length > 0) {
         setItems(localItems);
       } else {
@@ -926,7 +926,7 @@ export default function App() {
     }
 
     try {
-      const records = await withTimeout(fetchAllRowsFromSupabase<SewingThreadItem>('sewing_thread'), 4000);
+      const records = await fetchAllRowsFromSupabase<SewingThreadItem>('sewing_thread');
       if (records && records.length > 0) {
         const mappedRecords = records.map(r => ({
           ...r,
@@ -984,7 +984,7 @@ export default function App() {
         loadSewingFallbackData();
       }
     } catch (err) {
-      console.error("Sewing thread connection notice (using local state):", err);
+      console.warn("Sewing thread connection notice (using local state):", err);
       if (localItems.length > 0) {
         setSewingThreadItems(localItems);
       } else {

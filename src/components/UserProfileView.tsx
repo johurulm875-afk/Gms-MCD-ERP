@@ -204,12 +204,18 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           /* DISPLAY MODE */
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-200">
-              <div className="w-28 h-28 rounded-2xl overflow-hidden border-2 border-indigo-200 shadow-md bg-slate-100 shrink-0">
-                <img
-                  src={userProfile?.avatar_url || avatarUrl}
-                  alt={userProfile?.full_name || 'User Profile'}
-                  className="w-full h-full object-cover"
-                />
+              {/* ENLARGED PROFILE PICTURE WITH THICK BORDER & COLORFUL ROTATING LIGHT RING */}
+              <div className="relative p-[5px] rounded-3xl group shrink-0">
+                {/* Spinning Colorful Rainbow Light Ring Effect */}
+                <div className="absolute -inset-1.5 rounded-3xl bg-[conic-gradient(from_0deg,#ff0000,#ff8800,#ffff00,#00ff66,#00ffff,#0066ff,#cc00ff,#ff0000)] animate-[spin_3.5s_linear_infinite] blur-[3px] opacity-90 group-hover:opacity-100 transition duration-300" />
+                
+                <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-[22px] overflow-hidden border-4 border-white shadow-2xl bg-slate-950 flex items-center justify-center">
+                  <img
+                    src={userProfile?.avatar_url || avatarUrl}
+                    alt={userProfile?.full_name || 'User Profile'}
+                    className="w-full h-full object-cover object-center transform group-hover:scale-105 transition-transform duration-300"
+                  />
+                </div>
               </div>
 
               <div className="text-center sm:text-left flex-1">
