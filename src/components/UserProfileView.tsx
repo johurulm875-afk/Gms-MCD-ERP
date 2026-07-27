@@ -204,12 +204,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           /* DISPLAY MODE */
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-200">
-              {/* ENLARGED PROFILE PICTURE WITH THICK BORDER & COLORFUL ROTATING LIGHT RING */}
-              <div className="relative p-[5px] rounded-3xl group shrink-0">
-                {/* Spinning Colorful Rainbow Light Ring Effect */}
-                <div className="absolute -inset-1.5 rounded-3xl bg-[conic-gradient(from_0deg,#ff0000,#ff8800,#ffff00,#00ff66,#00ffff,#0066ff,#cc00ff,#ff0000)] animate-[spin_3.5s_linear_infinite] blur-[3px] opacity-90 group-hover:opacity-100 transition duration-300" />
+              {/* ENLARGED PROFILE PICTURE WITH SOFT & SUBTLE AMBIENT LIGHT HALO */}
+              <div className="relative p-[4px] rounded-3xl group shrink-0">
+                {/* Soft, Soothing Slow Indigo-Sky Halo Effect (Eye-Friendly) */}
+                <div className="absolute -inset-1 rounded-3xl bg-[conic-gradient(from_0deg,#818cf8,#38bdf8,#c084fc,#fbbf24,#818cf8)] animate-[spin_10s_linear_infinite] blur-[6px] opacity-40 group-hover:opacity-70 transition duration-500" />
                 
-                <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-[22px] overflow-hidden border-4 border-white shadow-2xl bg-slate-950 flex items-center justify-center">
+                <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-[22px] overflow-hidden border-4 border-white shadow-xl bg-slate-900 flex items-center justify-center">
                   <img
                     src={userProfile?.avatar_url || avatarUrl}
                     alt={userProfile?.full_name || 'User Profile'}

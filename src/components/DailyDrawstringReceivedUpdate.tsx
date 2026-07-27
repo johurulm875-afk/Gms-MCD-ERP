@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import XLSX from 'xlsx-js-style';
 import { DrawstringItem, TransactionLog, AppTheme, UserProfile } from '../types';
 import { canUserModifyData } from '../utils/permissionHelper';
+import { generateCompanyMultiSheetExcel, ExcelColumnDef } from '../utils/excelExportHelper';
 import { 
   PackageCheck, Search, Plus, FileSpreadsheet, Zap, Download,
   RefreshCw, ChevronLeft, ChevronRight, History, X, Lock, Edit3, Trash2, Save
@@ -282,71 +283,58 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
       return;
     }
 
-    const headers = [
-      'Buyer Name', 'SL No', 'Booking Date', 'Ref No / Job No', 'SR / GT No', 
-      'PO No', 'Item Name', 'Color', 'Size (MM)', 'Booking Qty', 
-      'Received Qty', 'Due Qty', 'Last Rcvd Qty', 'Rcvd Date Log', 'Remarks'
+    const columns: ExcelColumnDef[] = [
+      { header: 'SL', key: 'sl', width: 6, align: 'center' },
+      { header: 'Buyer Name', key: 'buyer_display', width: 18, align: 'left' },
+      { header: 'Booking Date', key: 'date_display', width: 13, align: 'center' },
+      { header: 'Ref No / Job No', key: 'ref_display', width: 18, align: 'left' },
+      { header: 'SR / GT No', key: 'sr_display', width: 14, align: 'left' },
+      { header: 'PO No', key: 'po_display', width: 14, align: 'left' },
+      { header: 'Item Name', key: 'item_display', width: 18, align: 'left' },
+      { header: 'Color', key: 'color_display', width: 14, align: 'left' },
+      { header: 'Size (MM)', key: 'size_display', width: 10, align: 'center' },
+      { header: 'Booking Qty (Pcs)', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Received Qty (Pcs)', key: 'rcv_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Due Qty (Pcs)', key: 'due_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Last Rcvd Qty (Pcs)', key: 'last_rcvd_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Rcvd Date Log', key: 'rcvd_date_display', width: 22, align: 'center' },
+      { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
     ];
 
-    const dataRows = filteredItems.map((item, index) => {
-      const bName = item.buyer || item.buyer_name || '';
-      const slNo = item.sl_no || item.id || index + 1;
-      const bDate = item.booking_date || item.date || '';
-      const refJob = item.ref_no_job_no || item.style || '';
-      const srGt = item.sr_gt_no || item.store_ref || '';
-      const poNo = item.po_no || item.order_no || '';
-      const iName = item.item_name || item.drawstring_type || '';
-      const col = item.color || item.colour || '';
-      const sizeVal = item.size || item.size_mm || '';
-      const bQty = item.booking_qty ?? 0;
-      const rQty = item.rcv_qty ?? item.receive_qty ?? 0;
-      const dQty = item.due_qty ?? item.balance_qty ?? Math.max(0, bQty - rQty);
-      const lastRcvd = item.last_rcvd_qty ?? 0;
-      const rcvdDateStr = item.rcvd_date || item.receive_date || '';
-      const rem = item.remarks || '';
+    const formattedData = filteredItems.map((item, index) => {
+      const bQty = Number(item.booking_qty) || 0;
+      const rQty = Number(item.rcv_qty ?? item.receive_qty) || 0;
+      const dQty = Number(item.due_qty ?? item.balance_qty) || Math.max(0, bQty - rQty);
 
-      return [
-        bName,
-        slNo,
-        bDate,
-        refJob,
-        srGt,
-        poNo,
-        iName,
-        col,
-        sizeVal,
-        Number(bQty),
-        Number(rQty),
-        Number(dQty),
-        Number(lastRcvd),
-        rcvdDateStr,
-        rem
-      ];
+      return {
+        ...item,
+        sl: index + 1,
+        buyer_display: item.buyer || item.buyer_name || '',
+        date_display: item.booking_date || item.date || '',
+        ref_display: item.ref_no_job_no || item.style || '',
+        sr_display: item.sr_gt_no || item.store_ref || '',
+        po_display: item.po_no || item.order_no || '',
+        item_display: item.item_name || item.drawstring_type || '',
+        color_display: item.color || item.colour || '',
+        size_display: item.size || item.size_mm || '',
+        booking_qty: bQty,
+        rcv_qty: rQty,
+        due_qty: dQty,
+        last_rcvd_qty: Number(item.last_rcvd_qty) || 0,
+        rcvd_date_display: item.rcvd_date || item.receive_date || ''
+      };
     });
 
-    // Calculate Totals Row
-    const totalBookQty = filteredItems.reduce((acc, i) => acc + (i.booking_qty || 0), 0);
-    const totalRcvQty = filteredItems.reduce((acc, i) => acc + (i.rcv_qty ?? i.receive_qty ?? 0), 0);
-    const totalDueQty = filteredItems.reduce((acc, i) => acc + (i.due_qty ?? i.balance_qty ?? Math.max(0, (i.booking_qty || 0) - (i.rcv_qty ?? i.receive_qty ?? 0))), 0);
-
-    const totalsRow = [
-      'TOTAL', '', '', '', '', '', '', '', '',
-      totalBookQty, totalRcvQty, totalDueQty, '', '', ''
-    ];
-
-    const wsData = [headers, ...dataRows, totalsRow];
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-    // Apply Column Widths
-    ws['!cols'] = [
-      { wch: 18 }, { wch: 8 }, { wch: 12 }, { wch: 18 }, { wch: 14 },
-      { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 14 },
-      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 20 }
-    ];
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Drawstring Received');
-    XLSX.writeFile(wb, `Drawstring_Daily_Received_${new Date().toISOString().split('T')[0]}.xlsx`);
+    generateCompanyMultiSheetExcel<any>({
+      moduleName: 'Drawstring',
+      fileNamePrefix: 'Drawstring_Daily_Received',
+      data: formattedData,
+      columns,
+      getBuyerName: (i: any) => i.buyer || i.buyer_name || 'General Buyer',
+      getBookingQty: (i: any) => Number(i.booking_qty) || 0,
+      getReceiveQty: (i: any) => Number(i.rcv_qty ?? i.receive_qty) || 0,
+      isUnreceived: (i: any) => (Number(i.rcv_qty) || 0) < (Number(i.booking_qty) || 0) || (Number(i.rcv_qty) || 0) === 0
+    });
   };
 
   // Export CSV matching exact Supabase column layout

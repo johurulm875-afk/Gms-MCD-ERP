@@ -4,6 +4,7 @@ import XLSX from 'xlsx-js-style';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../supabaseClient';
+import { generateCompanyMultiSheetExcel, ExcelColumnDef } from '../utils/excelExportHelper';
 import { 
   AlertTriangle, CheckCircle2, Download, Printer, Search, Filter, 
   FileSpreadsheet, ShieldAlert, Sparkles, Layers, Package, RefreshCw, X,
@@ -452,73 +453,65 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
 
   // Export Daily Drawstring Due Report to Excel
   const handleExportDsDueExcel = () => {
-    const wb = XLSX.utils.book_new();
+    if (!filteredDrawstringDueItems || filteredDrawstringDueItems.length === 0) {
+      alert('No drawstring due records available to export.');
+      return;
+    }
 
-    // Sheet 1: Detailed Drawstring Due Rows
-    const headers = [
-      'Buyer Name', 'Booking Date', 'Job No / Ref No', 'Style', 'SR/GT No', 'Store Ref / Booking Ref', 
-      'PO No / Order No', 'Item Name / Drawstring Type', 'Color Name', 'Size (mm)', 'Unit',
-      'Total Booking Qty', 'Total Received Qty', 'Remaining Due Qty', 'Supplier', 'Remarks'
+    const columns: ExcelColumnDef[] = [
+      { header: 'SL', key: 'sl', width: 6, align: 'center' },
+      { header: 'Buyer Name', key: 'buyer_display', width: 18, align: 'left' },
+      { header: 'Booking Date', key: 'date_display', width: 13, align: 'center' },
+      { header: 'Job No / Ref No', key: 'job_display', width: 18, align: 'left' },
+      { header: 'Style', key: 'style', width: 18, align: 'left' },
+      { header: 'SR/GT No', key: 'sr_display', width: 14, align: 'left' },
+      { header: 'Booking Ref', key: 'store_ref_display', width: 18, align: 'left' },
+      { header: 'PO No / Order No', key: 'po_display', width: 14, align: 'left' },
+      { header: 'Item Name / Drawstring Type', key: 'item_display', width: 20, align: 'left' },
+      { header: 'Color Name', key: 'color_display', width: 14, align: 'left' },
+      { header: 'Size (mm)', key: 'size_display', width: 10, align: 'center' },
+      { header: 'Unit', key: 'unit_display', width: 8, align: 'center' },
+      { header: 'Total Booking Qty', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Total Received Qty', key: 'rcv_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Remaining Due Qty', key: 'due_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Supplier', key: 'supplier', width: 16, align: 'left' },
+      { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
     ];
 
-    const rows = filteredDrawstringDueItems.map(i => {
+    const formattedData = filteredDrawstringDueItems.map((i, idx) => {
       const bQty = Number(i.booking_qty) || 0;
       const rQty = Number(i.receive_qty ?? i.rcv_qty) || 0;
       const dueQty = Math.max(0, bQty - rQty);
 
-      return [
-        i.buyer_name || i.buyer || '',
-        i.booking_date || i.date || '',
-        i.ref_no_job_no || i.job_no || '',
-        i.style || '',
-        i.sr_gt_no || i.sr_gt || '',
-        i.store_ref || i.s_thread_ref || '',
-        i.po_no || i.order_no || '',
-        i.drawstring_type || i.item_name || '',
-        i.colour || i.color || '',
-        i.size_mm || i.size || '',
-        i.unit || 'PCS',
-        bQty,
-        rQty,
-        dueQty,
-        i.supplier || '',
-        i.remarks || ''
-      ];
+      return {
+        ...i,
+        sl: idx + 1,
+        buyer_display: i.buyer_name || i.buyer || '',
+        date_display: i.booking_date || i.date || '',
+        job_display: i.ref_no_job_no || i.job_no || '',
+        sr_display: i.sr_gt_no || i.sr_gt || '',
+        store_ref_display: i.store_ref || i.s_thread_ref || '',
+        po_display: i.po_no || i.order_no || '',
+        item_display: i.drawstring_type || i.item_name || '',
+        color_display: i.colour || i.color || '',
+        size_display: i.size_mm || i.size || '',
+        unit_display: i.unit || 'PCS',
+        booking_qty: bQty,
+        rcv_qty: rQty,
+        due_qty: dueQty
+      };
     });
 
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['DAILY DRAWSTRING DUE / PENDING REPORT'],
-      [`Generated Date: ${new Date().toLocaleDateString()} | Total Pending Items: ${dsDueMetrics.totalDueItems} | Total Due Qty: ${dsDueMetrics.totalDue.toLocaleString()}`],
-      [],
-      headers, 
-      ...rows,
-      [],
-      ['TOTALS', '', '', '', '', '', '', '', '', '', '', dsDueMetrics.totalBooking, dsDueMetrics.totalRecv, dsDueMetrics.totalDue, '', '']
-    ]);
-
-    XLSX.utils.book_append_sheet(wb, ws, 'Drawstring Due Report');
-
-    // Sheet 2: Buyer-wise Summary
-    const buyerHeaders = ['Buyer Name', 'Total Due Items', 'Pending Styles Count', 'Total Booking Qty', 'Total Received Qty', 'Remaining Due Qty'];
-    const buyerRows = dsBuyerWiseSummary.map(b => [
-      b.buyer,
-      b.totalItems,
-      b.uniqueStyles,
-      b.totalBookingQty,
-      b.totalRecvQty,
-      b.totalDueQty
-    ]);
-
-    const wsBuyer = XLSX.utils.aoa_to_sheet([
-      ['BUYER-WISE DRAWSTRING DUE SUMMARY'],
-      [],
-      buyerHeaders,
-      ...buyerRows
-    ]);
-
-    XLSX.utils.book_append_sheet(wb, wsBuyer, 'Buyer Summary');
-
-    XLSX.writeFile(wb, `Daily_Drawstring_Due_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    generateCompanyMultiSheetExcel<any>({
+      moduleName: 'Drawstring',
+      fileNamePrefix: 'Daily_Drawstring_Due_Report',
+      data: formattedData,
+      columns,
+      getBuyerName: (i: any) => i.buyer_name || i.buyer || 'General Buyer',
+      getBookingQty: (i: any) => Number(i.booking_qty) || 0,
+      getReceiveQty: (i: any) => Number(i.rcv_qty ?? i.receive_qty) || 0,
+      isUnreceived: (i: any) => (Number(i.rcv_qty) || 0) < (Number(i.booking_qty) || 0) || (Number(i.rcv_qty) || 0) === 0
+    });
   };
 
   // Export Daily Drawstring Due Report to PDF using jsPDF
@@ -603,71 +596,59 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
 
   // Export Sewing Thread Due Report to Excel
   const handleExportDueExcel = () => {
-    const wb = XLSX.utils.book_new();
+    if (!filteredSewingDueItems || filteredSewingDueItems.length === 0) {
+      alert('No sewing thread due records available to export.');
+      return;
+    }
 
-    // Sheet 1: Detailed Due Rows
-    const headers = [
-      'Buyer Name', 'Job No', 'Style', 'SR/GT No', 'Fabric S/R & Trims Booking No (s_thread_ref)', 
-      'Color Name', 'Count / Spec', 'Shade / Pantone', 'Booking Date', 
-      'Total Booking Qty', 'Total Received Qty', 'Remaining Due Qty', 'Supplier', 'Remarks'
+    const columns: ExcelColumnDef[] = [
+      { header: 'SL', key: 'sl', width: 6, align: 'center' },
+      { header: 'Buyer Name', key: 'buyer_display', width: 18, align: 'left' },
+      { header: 'Job No', key: 'job_no', width: 12, align: 'left' },
+      { header: 'Style', key: 'style', width: 18, align: 'left' },
+      { header: 'SR/GT No', key: 'sr_gt', width: 12, align: 'left' },
+      { header: 'Fabric S/R & Trims Booking No (s_thread_ref)', key: 'store_ref_display', width: 22, align: 'left' },
+      { header: 'Color Name', key: 'color_display', width: 14, align: 'left' },
+      { header: 'Count / Spec', key: 'count_display', width: 14, align: 'center' },
+      { header: 'Shade / Pantone', key: 'shade_display', width: 14, align: 'left' },
+      { header: 'Booking Date', key: 'date_display', width: 13, align: 'center' },
+      { header: 'Total Booking Qty (Cone)', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Total Received Qty (Cone)', key: 'rcv_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Remaining Due Qty (Cone)', key: 'due_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Supplier', key: 'supplier', width: 16, align: 'left' },
+      { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
     ];
 
-    const rows = filteredSewingDueItems.map(i => {
+    const formattedData = filteredSewingDueItems.map((i, idx) => {
       const bQty = Number(i.booking_qty) || 0;
       const rQty = Number(i.receive_qty) || 0;
       const dueQty = Math.max(0, bQty - rQty);
 
-      return [
-        i.buyer_name || i.buyer || '',
-        i.job_no || '',
-        i.style || '',
-        i.sr_gt || '',
-        i.s_thread_ref || i.store_ref || '',
-        i.colour || i.color || '',
-        i.count || i.thread_count || i.item_name || '',
-        i.shade_no || i.pantone || '',
-        i.date || i.rcvd_date || '',
-        bQty,
-        rQty,
-        dueQty,
-        i.supplier || '',
-        i.remarks || ''
-      ];
+      return {
+        ...i,
+        sl: idx + 1,
+        buyer_display: i.buyer_name || i.buyer || '',
+        store_ref_display: i.s_thread_ref || i.store_ref || '',
+        color_display: i.colour || i.color || '',
+        count_display: i.count || i.thread_count || i.item_name || '',
+        shade_display: i.shade_no || i.pantone || '',
+        date_display: i.date || i.rcvd_date || '',
+        booking_qty: bQty,
+        rcv_qty: rQty,
+        due_qty: dueQty
+      };
     });
 
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['SEWING THREAD DUE / PENDING REPORT'],
-      [`Generated Date: ${new Date().toLocaleDateString()} | Total Pending Items: ${dueMetrics.totalDueItems} | Total Due Qty: ${dueMetrics.totalDue.toLocaleString()} Cones`],
-      [],
-      headers, 
-      ...rows,
-      [],
-      ['TOTALS', '', '', '', '', '', '', '', '', dueMetrics.totalBooking, dueMetrics.totalRecv, dueMetrics.totalDue, '', '']
-    ]);
-
-    XLSX.utils.book_append_sheet(wb, ws, 'Sewing Thread Due Report');
-
-    // Sheet 2: Buyer-wise Summary
-    const buyerHeaders = ['Buyer Name', 'Total Due Items', 'Pending Styles Count', 'Total Booking Qty', 'Total Received Qty', 'Remaining Due Qty'];
-    const buyerRows = buyerWiseSummary.map(b => [
-      b.buyer,
-      b.totalItems,
-      b.uniqueStyles,
-      b.totalBookingQty,
-      b.totalRecvQty,
-      b.totalDueQty
-    ]);
-
-    const wsBuyer = XLSX.utils.aoa_to_sheet([
-      ['BUYER-WISE SEWING THREAD DUE SUMMARY'],
-      [],
-      buyerHeaders,
-      ...buyerRows
-    ]);
-
-    XLSX.utils.book_append_sheet(wb, wsBuyer, 'Buyer Summary');
-
-    XLSX.writeFile(wb, `Sewing_Thread_Due_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    generateCompanyMultiSheetExcel<any>({
+      moduleName: 'Sewing Thread',
+      fileNamePrefix: 'Sewing_Thread_Due_Report',
+      data: formattedData,
+      columns,
+      getBuyerName: (i: any) => i.buyer_name || i.buyer || 'General Buyer',
+      getBookingQty: (i: any) => Number(i.booking_qty) || 0,
+      getReceiveQty: (i: any) => Number(i.receive_qty) || 0,
+      isUnreceived: (i: any) => (Number(i.receive_qty) || 0) < (Number(i.booking_qty) || 0) || (Number(i.receive_qty) || 0) === 0
+    });
   };
 
   // Export Sewing Thread Due Report to PDF using jsPDF
@@ -747,97 +728,114 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
     doc.save(`Sewing_Thread_Due_Report_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  // Export QC NOT OK to Excel
+  // Export QC NOT OK to Excel with GMS Banner, Borders & Buyer Tabs
   const handleExportQcExcel = () => {
-    const wb = XLSX.utils.book_new();
-
-    if (qcCategory === 'ALL' || qcCategory === 'SEWING') {
-      const sewingHeaders = [
-        'Buyer Name', 'Booking Date', 'Job No', 'Style Ref & Desc', 'PO No / Order No', 
-        'SR/GT No', 'Store Ref / Thread Ref', 'Thread Count / Spec', 'Meter / Cone Length', 
-        'Per Body Consm', 'Colour', 'Shade / Pantone', 'WO Qty', 'Recv Date', 
-        'Recv Challan', 'Recv Qty', 'Issue Date', 'Issue Challan', 'Issue Qty', 
-        'Balance Qty', 'Supplier', 'QC Status', 'Remarks'
+    if (qcCategory === 'SEWING' || (qcCategory === 'ALL' && filteredSewingQcNotOk.length > 0)) {
+      const columns: ExcelColumnDef[] = [
+        { header: 'SL', key: 'sl', width: 6, align: 'center' },
+        { header: 'Buyer Name', key: 'buyer_display', width: 18, align: 'left' },
+        { header: 'Booking Date', key: 'date_display', width: 13, align: 'center' },
+        { header: 'Job No', key: 'job_no', width: 12, align: 'left' },
+        { header: 'Style Ref & Desc', key: 'style', width: 18, align: 'left' },
+        { header: 'PO No / Order No', key: 'order_no', width: 14, align: 'left' },
+        { header: 'SR/GT No', key: 'sr_gt', width: 12, align: 'left' },
+        { header: 'Booking Ref', key: 'store_ref_display', width: 16, align: 'left' },
+        { header: 'Thread Count', key: 'count_display', width: 14, align: 'center' },
+        { header: 'Meter / Cone', key: 'meter', width: 12, align: 'center' },
+        { header: 'Per Body Consm', key: 'per_body_consm', width: 14, align: 'center' },
+        { header: 'Colour', key: 'color_display', width: 14, align: 'left' },
+        { header: 'Shade / Pantone', key: 'shade_display', width: 14, align: 'left' },
+        { header: 'WO Qty (Cone)', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+        { header: 'Recv Date', key: 'rcvd_date_display', width: 13, align: 'center' },
+        { header: 'Recv Challan', key: 'rcvd_challan_display', width: 16, align: 'left' },
+        { header: 'Recv Qty (Cone)', key: 'receive_qty', type: 'number', width: 16, align: 'right' },
+        { header: 'Issue Date', key: 'issue_date', width: 13, align: 'center' },
+        { header: 'Issue Challan', key: 'issue_challan', width: 15, align: 'left' },
+        { header: 'Issue Qty (Cone)', key: 'issue_qty', type: 'number', width: 15, align: 'right' },
+        { header: 'Balance Qty (Cone)', key: 'balance_qty', type: 'number', width: 16, align: 'right' },
+        { header: 'Supplier', key: 'supplier', width: 16, align: 'left' },
+        { header: 'QC Status', key: 'qc_status', width: 14, align: 'center' },
+        { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
       ];
 
-      const sewingRows = filteredSewingQcNotOk.map(i => [
-        i.buyer_name || i.buyer || '',
-        i.date || i.rcvd_date || '',
-        i.job_no || '',
-        i.style || '',
-        i.order_no || '',
-        i.sr_gt || '',
-        i.s_thread_ref || i.store_ref || '',
-        i.count || i.thread_count || i.item_name || '',
-        i.meter || '',
-        i.per_body_consm || '',
-        i.colour || i.color || '',
-        i.shade_no || i.pantone || '',
-        Number(i.booking_qty) || 0,
-        i.receive_date || i.rcvd_date || '',
-        i.receive_challan || i.rcvd_challan || '',
-        Number(i.receive_qty) || 0,
-        i.issue_date || '',
-        i.issue_challan || '',
-        Number(i.issue_qty) || 0,
-        Number(i.balance_qty) || 0,
-        i.supplier || '',
-        'QC NOT OK',
-        i.remarks || ''
-      ]);
+      const formattedData = filteredSewingQcNotOk.map((i, idx) => ({
+        ...i,
+        sl: idx + 1,
+        buyer_display: i.buyer_name || i.buyer || '',
+        date_display: i.date || i.rcvd_date || '',
+        store_ref_display: i.s_thread_ref || i.store_ref || '',
+        count_display: i.count || i.thread_count || i.item_name || '',
+        color_display: i.colour || i.color || '',
+        shade_display: i.shade_no || i.pantone || '',
+        rcvd_date_display: i.receive_date || i.rcvd_date || '',
+        rcvd_challan_display: i.receive_challan || i.rcvd_challan || '',
+        qc_status: 'QC NOT OK',
+        booking_qty: Number(i.booking_qty) || 0,
+        receive_qty: Number(i.receive_qty) || 0,
+        issue_qty: Number(i.issue_qty) || 0,
+        balance_qty: Number(i.balance_qty) || 0
+      }));
 
-      const wsSewing = XLSX.utils.aoa_to_sheet([
-        sewingHeaders, 
-        ...sewingRows,
-        [],
-        ['SEWING THREAD QC NOT OK GRAND TOTAL', '', '', '', '', '', '', '', '', '', '', '', 
-          filteredSewingQcNotOk.reduce((s, i) => s + (Number(i.booking_qty) || 0), 0), '', '', 
-          filteredSewingQcNotOk.reduce((s, i) => s + (Number(i.receive_qty) || 0), 0), '', '', '', 
-          filteredSewingQcNotOk.reduce((s, i) => s + (Number(i.balance_qty) || 0), 0), '', '', '']
-      ]);
-      XLSX.utils.book_append_sheet(wb, wsSewing, 'Sewing Thread QC NOT OK');
+      generateCompanyMultiSheetExcel<any>({
+        moduleName: 'Sewing Thread QC NOT OK',
+        fileNamePrefix: 'Sewing_Thread_QC_NOT_OK_Report',
+        data: formattedData,
+        columns,
+        getBuyerName: (i: any) => i.buyer_name || i.buyer || 'General Buyer',
+        isUnreceived: (i: any) => (Number(i.receive_qty) || 0) < (Number(i.booking_qty) || 0) || (Number(i.receive_qty) || 0) === 0
+      });
     }
 
-    if (qcCategory === 'ALL' || qcCategory === 'DRAWSTRING') {
-      const dsHeaders = [
-        'Buyer Name', 'Booking Date', 'Job No', 'Style', 'SR/GT No', 'Store Ref', 
-        'PO No', 'Item Name', 'Color', 'Size', 'Booking Qty', 'Recv Qty', 
-        'Due/Balance Qty', 'Recv Date', 'Supplier', 'QC Status', 'Remarks'
+    if (qcCategory === 'DRAWSTRING' || (qcCategory === 'ALL' && filteredDrawstringQcNotOk.length > 0)) {
+      const dsColumns: ExcelColumnDef[] = [
+        { header: 'SL', key: 'sl', width: 6, align: 'center' },
+        { header: 'Buyer Name', key: 'buyer_display', width: 18, align: 'left' },
+        { header: 'Booking Date', key: 'date_display', width: 13, align: 'center' },
+        { header: 'Job No', key: 'job_display', width: 18, align: 'left' },
+        { header: 'Style', key: 'style', width: 18, align: 'left' },
+        { header: 'SR/GT No', key: 'sr_display', width: 14, align: 'left' },
+        { header: 'Booking Ref', key: 'store_ref_display', width: 16, align: 'left' },
+        { header: 'PO No', key: 'po_display', width: 14, align: 'left' },
+        { header: 'Item Name', key: 'item_display', width: 18, align: 'left' },
+        { header: 'Color', key: 'color_display', width: 14, align: 'left' },
+        { header: 'Size (mm)', key: 'size_display', width: 10, align: 'center' },
+        { header: 'Booking Qty (Pcs)', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+        { header: 'Recv Qty (Pcs)', key: 'receive_qty', type: 'number', width: 16, align: 'right' },
+        { header: 'Due/Balance Qty (Pcs)', key: 'balance_qty', type: 'number', width: 16, align: 'right' },
+        { header: 'Recv Date', key: 'rcvd_date_display', width: 13, align: 'center' },
+        { header: 'Supplier', key: 'supplier', width: 16, align: 'left' },
+        { header: 'QC Status', key: 'qc_status', width: 14, align: 'center' },
+        { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
       ];
 
-      const dsRows = filteredDrawstringQcNotOk.map(i => [
-        i.buyer_name || i.buyer || '',
-        i.booking_date || i.date || '',
-        i.ref_no_job_no || i.job_no || '',
-        i.style || '',
-        i.sr_gt_no || i.sr_gt || '',
-        i.store_ref || i.s_thread_ref || '',
-        i.po_no || i.order_no || '',
-        i.item_name || i.drawstring_type || '',
-        i.colour || i.color || '',
-        i.size || i.size_mm || '',
-        Number(i.booking_qty) || 0,
-        Number(i.receive_qty || i.rcv_qty) || 0,
-        Number(i.balance_qty || i.due_qty) || 0,
-        i.rcvd_date || i.receive_date || '',
-        i.supplier || '',
-        'QC NOT OK',
-        i.remarks || ''
-      ]);
+      const formattedDsData = filteredDrawstringQcNotOk.map((i, idx) => ({
+        ...i,
+        sl: idx + 1,
+        buyer_display: i.buyer_name || i.buyer || '',
+        date_display: i.booking_date || i.date || '',
+        job_display: i.ref_no_job_no || i.job_no || '',
+        sr_display: i.sr_gt_no || i.sr_gt || '',
+        store_ref_display: i.store_ref || i.s_thread_ref || '',
+        po_display: i.po_no || i.order_no || '',
+        item_display: i.item_name || i.drawstring_type || '',
+        color_display: i.colour || i.color || '',
+        size_display: i.size || i.size_mm || '',
+        rcvd_date_display: i.rcvd_date || i.receive_date || '',
+        qc_status: 'QC NOT OK',
+        booking_qty: Number(i.booking_qty) || 0,
+        receive_qty: Number(i.receive_qty || i.rcv_qty) || 0,
+        balance_qty: Number(i.balance_qty || i.due_qty) || 0
+      }));
 
-      const wsDs = XLSX.utils.aoa_to_sheet([
-        dsHeaders, 
-        ...dsRows,
-        [],
-        ['DRAWSTRING QC NOT OK GRAND TOTAL', '', '', '', '', '', '', '', '', '', 
-          filteredDrawstringQcNotOk.reduce((s, i) => s + (Number(i.booking_qty) || 0), 0), 
-          filteredDrawstringQcNotOk.reduce((s, i) => s + (Number(i.receive_qty || i.rcv_qty) || 0), 0), 
-          filteredDrawstringQcNotOk.reduce((s, i) => s + (Number(i.balance_qty || i.due_qty) || 0), 0), '', '', '', '']
-      ]);
-      XLSX.utils.book_append_sheet(wb, wsDs, 'Drawstring QC NOT OK');
+      generateCompanyMultiSheetExcel<any>({
+        moduleName: 'Drawstring QC NOT OK',
+        fileNamePrefix: 'Drawstring_QC_NOT_OK_Report',
+        data: formattedDsData,
+        columns: dsColumns,
+        getBuyerName: (i: any) => i.buyer_name || i.buyer || 'General Buyer',
+        isUnreceived: (i: any) => (Number(i.receive_qty || i.rcv_qty) || 0) < (Number(i.booking_qty) || 0) || (Number(i.receive_qty || i.rcv_qty) || 0) === 0
+      });
     }
-
-    XLSX.writeFile(wb, `QC_NOT_OK_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (

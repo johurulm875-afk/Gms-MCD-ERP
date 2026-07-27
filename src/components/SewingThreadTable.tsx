@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import XLSX from 'xlsx-js-style';
 import { SewingThreadItem, StatusFilter, TransactionLog, UserProfile, QuickUpdatePayload, AppTheme } from '../types';
 import { canUserModifyData } from '../utils/permissionHelper';
+import { generateCompanyMultiSheetExcel, ExcelColumnDef } from '../utils/excelExportHelper';
 import { SewingThreadNewBookingModal } from './SewingThreadNewBookingModal';
 import { SewingThreadQuickStoreRefModal } from './SewingThreadQuickStoreRefModal';
 import { 
@@ -203,197 +204,66 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
     setIsQuickWorkspaceOpen(true);
   };
 
-  const exportToCSV = () => {
-    const headers = [
-      'ID',
-      'Buyer Name',
-      'Job No',
-      'Style',
-      'Order No / PO',
-      'SR / GT',
-      'Store Ref',
-      'Thread Count',
-      'Meter / Cone',
-      'Per Body Consm',
-      'Colour',
-      'Shade / Pantone',
-      'Booking Qty',
-      'Receive Date',
-      'Receive Challan',
-      'Receive Qty',
-      'Issue Date',
-      'Issue Challan',
-      'Issue Qty',
-      'Balance Qty',
-      'Supplier',
-      'QC Status',
-      'Remarks'
+  const handleExportExcel = () => {
+    if (!filteredItems || filteredItems.length === 0) {
+      showToast("No records available to export", "error");
+      return;
+    }
+
+    const columns: ExcelColumnDef[] = [
+      { header: 'ID', key: 'id', width: 8, align: 'center' },
+      { header: 'Buyer Name', key: 'buyer_name_display', width: 18, align: 'left' },
+      { header: 'Job No', key: 'job_no', width: 12, align: 'left' },
+      { header: 'Style', key: 'style', width: 18, align: 'left' },
+      { header: 'Order No / PO', key: 'order_no', width: 14, align: 'left' },
+      { header: 'SR / GT', key: 'sr_gt', width: 12, align: 'left' },
+      { header: 'Booking Ref', key: 'store_ref_display', width: 14, align: 'left' },
+      { header: 'Thread Count', key: 'count_display', width: 12, align: 'center' },
+      { header: 'Meter / Cone', key: 'meter', width: 12, align: 'center' },
+      { header: 'Per Body Consm', key: 'per_body_consm', width: 14, align: 'center' },
+      { header: 'Colour', key: 'colour_display', width: 14, align: 'left' },
+      { header: 'Shade / Pantone', key: 'shade_display', width: 14, align: 'left' },
+      { header: 'Booking Qty (Cone)', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Receive Date', key: 'rcvd_date_display', width: 13, align: 'center' },
+      { header: 'Receive Challan', key: 'rcvd_challan_display', width: 16, align: 'left' },
+      { header: 'Receive Qty (Cone)', key: 'receive_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Issue Date', key: 'issue_date', width: 13, align: 'center' },
+      { header: 'Issue Challan', key: 'issue_challan', width: 15, align: 'left' },
+      { header: 'Issue Qty (Cone)', key: 'issue_qty', type: 'number', width: 15, align: 'right' },
+      { header: 'Balance Qty (Cone)', key: 'balance_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Supplier', key: 'supplier', width: 16, align: 'left' },
+      { header: 'QC Status', key: 'qc_status_display', width: 12, align: 'center' },
+      { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
     ];
 
-    const createStyledWorksheet = (itemList: SewingThreadItem[]) => {
-      const dataRows = itemList.map(i => [
-        i.id,
-        i.buyer_name || i.buyer || '',
-        i.job_no || '',
-        i.style || '',
-        i.order_no || '',
-        i.sr_gt || '',
-        i.s_thread_ref || i.store_ref || '',
-        i.thread_count || i.count || '',
-        i.meter || '',
-        i.per_body_consm || '',
-        i.colour || i.color || '',
-        i.shade_no || i.pantone || '',
-        Number(i.booking_qty) || 0,
-        i.receive_date || i.rcvd_date || '',
-        i.receive_challan || i.rcvd_challan || '',
-        Number(i.receive_qty) || 0,
-        i.issue_date || '',
-        i.issue_challan || '',
-        Number(i.issue_qty) || 0,
-        Number(i.balance_qty) || 0,
-        i.supplier || '',
-        i.qc_not_ok ? 'QC NOT OK' : 'QC OK',
-        i.remarks || ''
-      ]);
+    const formattedData = filteredItems.map((i) => ({
+      ...i,
+      buyer_name_display: i.buyer_name || i.buyer || '',
+      store_ref_display: i.s_thread_ref || i.store_ref || '',
+      count_display: i.thread_count || i.count || '',
+      colour_display: i.colour || i.color || '',
+      shade_display: i.shade_no || i.pantone || '',
+      rcvd_date_display: i.receive_date || i.rcvd_date || '',
+      rcvd_challan_display: i.receive_challan || i.rcvd_challan || '',
+      qc_status_display: i.qc_not_ok ? 'QC NOT OK' : 'QC OK',
+      booking_qty: Number(i.booking_qty) || 0,
+      receive_qty: Number(i.receive_qty) || 0,
+      issue_qty: Number(i.issue_qty) || 0,
+      balance_qty: Number(i.balance_qty) || 0
+    }));
 
-      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-
-      // Row Heights
-      ws['!rows'] = [
-        { hpt: 28 }, // Header row
-        ...itemList.map(() => ({ hpt: 20 })) // Data rows
-      ];
-
-      // Column Widths calculation
-      const colWidths = headers.map((h, colIdx) => {
-        let maxLen = h.length;
-        dataRows.forEach(row => {
-          const val = row[colIdx] != null ? String(row[colIdx]) : '';
-          if (val.length > maxLen) maxLen = val.length;
-        });
-        return { wch: Math.min(Math.max(maxLen + 4, 12), 35) };
-      });
-      ws['!cols'] = colWidths;
-
-      // Styling parameters
-      const thinBorder = {
-        top: { style: 'thin', color: { rgb: 'CCCCCC' } },
-        bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
-        left: { style: 'thin', color: { rgb: 'CCCCCC' } },
-        right: { style: 'thin', color: { rgb: 'CCCCCC' } }
-      };
-
-      const headerStyle = {
-        fill: { fgColor: { rgb: '1E3A8A' } }, // Deep Navy
-        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
-        alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
-        border: {
-          top: { style: 'medium', color: { rgb: '1E3A8A' } },
-          bottom: { style: 'medium', color: { rgb: '1E3A8A' } },
-          left: { style: 'thin', color: { rgb: '3B82F6' } },
-          right: { style: 'thin', color: { rgb: '3B82F6' } }
-        }
-      };
-
-      // 1. Style Header Cells
-      headers.forEach((_, c) => {
-        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-        if (ws[cellRef]) {
-          ws[cellRef].s = headerStyle;
-        }
-      });
-
-      // 2. Style Data Cells
-      itemList.forEach((item, rowIdx) => {
-        const r = rowIdx + 1; // Row 0 is header
-        const bookingQty = Number(item.booking_qty) || 0;
-        const receiveQty = Number(item.receive_qty) || 0;
-
-        // Unreceived or pending receive check
-        const isUnreceived = receiveQty < bookingQty || receiveQty === 0;
-        const isZeroReceive = receiveQty === 0;
-
-        headers.forEach((colName, c) => {
-          const cellRef = XLSX.utils.encode_cell({ r, c });
-          if (!ws[cellRef]) return;
-
-          const isBookingQtyCol = colName === 'Booking Qty';
-          const isColourCol = colName === 'Colour';
-          const isNumericCol = ['Booking Qty', 'Receive Qty', 'Issue Qty', 'Balance Qty'].includes(colName);
-          const isCenterCol = ['ID', 'QC Status', 'Receive Date', 'Issue Date', 'Thread Count'].includes(colName);
-
-          // Default styling
-          let fgColor = rowIdx % 2 === 0 ? 'FFFFFF' : 'F9FAFB';
-          let fontColor = '1F2937';
-          let isBold = false;
-
-          // Apply Yellow Highlights for Unreceived Bookings ONLY on 'Booking Qty' and 'Colour'
-          if (isUnreceived) {
-            if (isBookingQtyCol) {
-              fgColor = 'FFFF00'; // Bright Yellow
-              fontColor = '991B1B'; // Bold Dark Red text
-              isBold = true;
-            } else if (isColourCol) {
-              fgColor = 'FFFF00'; // Bright Yellow for Colour
-              fontColor = '1F2937';
-              isBold = true;
-            }
-          }
-
-          ws[cellRef].s = {
-            fill: { fgColor: { rgb: fgColor } },
-            font: { name: 'Calibri', sz: 10, bold: isBold, color: { rgb: fontColor } },
-            border: thinBorder,
-            alignment: {
-              vertical: 'center',
-              horizontal: isNumericCol ? 'right' : (isCenterCol ? 'center' : 'left'),
-              wrapText: true
-            }
-          };
-        });
-      });
-
-      return ws;
-    };
-
-    const wb = XLSX.utils.book_new();
-
-    // 1. All Items Master Sheet
-    const wsMaster = createStyledWorksheet(filteredItems);
-    XLSX.utils.book_append_sheet(wb, wsMaster, "All Sewing Threads");
-
-    // 2. Separate Sheets for Each Buyer
-    const buyerMap: Record<string, SewingThreadItem[]> = {};
-    filteredItems.forEach(item => {
-      const bName = (item.buyer_name || item.buyer || 'General Buyer').trim();
-      if (!buyerMap[bName]) {
-        buyerMap[bName] = [];
-      }
-      buyerMap[bName].push(item);
+    generateCompanyMultiSheetExcel<any>({
+      moduleName: 'Sewing Thread',
+      fileNamePrefix: 'sewing_thread_export',
+      data: formattedData,
+      columns,
+      getBuyerName: (i: any) => i.buyer_name || i.buyer || 'General Buyer',
+      getBookingQty: (i: any) => Number(i.booking_qty) || 0,
+      getReceiveQty: (i: any) => Number(i.receive_qty) || 0,
+      isUnreceived: (i: any) => (Number(i.receive_qty) || 0) < (Number(i.booking_qty) || 0) || (Number(i.receive_qty) || 0) === 0
     });
 
-    Object.keys(buyerMap).forEach(bName => {
-      const buyerItems = buyerMap[bName];
-      const wsBuyer = createStyledWorksheet(buyerItems);
-
-      // Clean sheet name (Excel 31 char limit, no invalid chars : \ / ? * [ ])
-      let safeName = bName.replace(/[:\\/?*\[\]]/g, '').trim().slice(0, 30);
-      if (!safeName) safeName = 'Buyer';
-
-      // Avoid duplicate sheet names
-      let finalSheetName = safeName;
-      let counter = 1;
-      while (wb.SheetNames.includes(finalSheetName)) {
-        finalSheetName = `${safeName.slice(0, 25)}_${counter}`;
-        counter++;
-      }
-
-      XLSX.utils.book_append_sheet(wb, wsBuyer, finalSheetName);
-    });
-
-    XLSX.writeFile(wb, `sewing_thread_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    showToast('Excel downloaded with styled sheets & yellow highlighted unreceived bookings!', 'success');
+    showToast('Downloaded Sewing Thread Excel with GMS Header, Buyer tabs & yellow highlighted unreceived bookings!', 'success');
   };
 
   // Internal save fallback for quick updates if onSaveQuickUpdates is not passed directly
@@ -533,7 +403,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
         {/* Right: Actions */}
         <div className="flex items-center gap-2">
           <button
-            onClick={exportToCSV}
+            onClick={handleExportExcel}
             className={`p-2 rounded-xl border transition-all ${
               isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
             }`}

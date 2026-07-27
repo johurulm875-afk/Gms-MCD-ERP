@@ -25,6 +25,7 @@ import { UserProfileView } from './components/UserProfileView';
 import { AdminPanel } from './components/AdminPanel';
 import { GmsLogo } from './components/GmsLogo';
 import { matchesStatusFilter, getItemStatus } from './utils/statusHelper';
+import { generateCompanyMultiSheetExcel, ExcelColumnDef } from './utils/excelExportHelper';
 
 import { 
   Search, Plus, Zap, Database, RefreshCw, Download, Filter, Package, 
@@ -1612,185 +1613,51 @@ export default function App() {
       return;
     }
 
-    const headers = [
-      'SL',
-      'Buyer Name',
-      'Booking Date',
-      'Booking Challan',
-      'Style',
-      'Order No',
-      'Store Ref.',
-      'Job No',
-      'Colour',
-      'Item Name',
-      'CM',
-      'YDS',
-      'Booking Qty (Pcs)',
-      'Receive Qty (Pcs)',
-      'Receive Date',
-      'Receive Challan',
-      'Issue Qty (Pcs)',
-      'Issue Date',
-      'Issue Challan',
-      'Balance Qty (Pcs)',
-      'Remarks'
+    const columns: ExcelColumnDef[] = [
+      { header: 'SL', key: 'sl', width: 6, align: 'center' },
+      { header: 'Buyer Name', key: 'buyer_name', width: 18, align: 'left' },
+      { header: 'Booking Date', key: 'date', width: 13, align: 'center' },
+      { header: 'Booking Challan', key: 'booking_challan', width: 16, align: 'left' },
+      { header: 'Style', key: 'style', width: 18, align: 'left' },
+      { header: 'Order No', key: 'order_no', width: 14, align: 'left' },
+      { header: 'Booking Ref.', key: 'store_ref', width: 14, align: 'left' },
+      { header: 'Job No', key: 'job_no', width: 12, align: 'left' },
+      { header: 'Colour', key: 'colour', width: 14, align: 'left' },
+      { header: 'Item Name', key: 'item_name', width: 18, align: 'left' },
+      { header: 'CM', key: 'cm', width: 8, align: 'center' },
+      { header: 'YDS', key: 'yds', width: 8, align: 'center' },
+      { header: 'Booking Qty (Yds)', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Receive Qty (Yds)', key: 'receive_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Receive Date', key: 'receive_date', width: 13, align: 'center' },
+      { header: 'Receive Challan', key: 'receive_challan', width: 16, align: 'left' },
+      { header: 'Issue Qty (Yds)', key: 'issue_qty', type: 'number', width: 15, align: 'right' },
+      { header: 'Issue Date', key: 'issue_date', width: 13, align: 'center' },
+      { header: 'Issue Challan', key: 'issue_challan', width: 15, align: 'left' },
+      { header: 'Balance Qty (Yds)', key: 'balance_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
     ];
 
-    const createStyledWorksheet = (itemList: TwillTapeItem[]) => {
-      const dataRows = itemList.map((item, index) => [
-        index + 1,
-        item.buyer_name || '',
-        item.date || '',
-        item.booking_challan || '',
-        item.style || '',
-        item.order_no || '',
-        item.store_ref || '',
-        item.job_no || '',
-        item.colour || '',
-        item.item_name || '',
-        item.cm || '',
-        item.yds || '',
-        Number(item.booking_qty) || 0,
-        Number(item.receive_qty) || 0,
-        item.receive_date || '',
-        item.receive_challan || '',
-        Number(item.issue_qty) || 0,
-        item.issue_date || '',
-        item.issue_challan || '',
-        Number(item.balance_qty) || 0,
-        item.remarks || ''
-      ]);
+    const formattedData = filteredItems.map((item, idx) => ({
+      ...item,
+      sl: idx + 1,
+      booking_qty: Number(item.booking_qty) || 0,
+      receive_qty: Number(item.receive_qty) || 0,
+      issue_qty: Number(item.issue_qty) || 0,
+      balance_qty: Number(item.balance_qty) || 0
+    }));
 
-      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-
-      // Row Heights
-      ws['!rows'] = [
-        { hpt: 28 }, // Header
-        ...itemList.map(() => ({ hpt: 20 }))
-      ];
-
-      // Column Widths
-      const colWidths = headers.map((h, colIdx) => {
-        let maxLen = h.length;
-        dataRows.forEach(row => {
-          const val = row[colIdx] != null ? String(row[colIdx]) : '';
-          if (val.length > maxLen) maxLen = val.length;
-        });
-        return { wch: Math.min(Math.max(maxLen + 4, 10), 35) };
-      });
-      ws['!cols'] = colWidths;
-
-      const thinBorder = {
-        top: { style: 'thin', color: { rgb: 'CCCCCC' } },
-        bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
-        left: { style: 'thin', color: { rgb: 'CCCCCC' } },
-        right: { style: 'thin', color: { rgb: 'CCCCCC' } }
-      };
-
-      const headerStyle = {
-        fill: { fgColor: { rgb: '1E3A8A' } }, // Deep Navy
-        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
-        alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
-        border: {
-          top: { style: 'medium', color: { rgb: '1E3A8A' } },
-          bottom: { style: 'medium', color: { rgb: '1E3A8A' } },
-          left: { style: 'thin', color: { rgb: '3B82F6' } },
-          right: { style: 'thin', color: { rgb: '3B82F6' } }
-        }
-      };
-
-      // Header cells
-      headers.forEach((_, c) => {
-        const cellRef = XLSX.utils.encode_cell({ r: 0, c });
-        if (ws[cellRef]) {
-          ws[cellRef].s = headerStyle;
-        }
-      });
-
-      // Data cells
-      itemList.forEach((item, rowIdx) => {
-        const r = rowIdx + 1;
-        const bookingQty = Number(item.booking_qty) || 0;
-        const receiveQty = Number(item.receive_qty) || 0;
-        const isUnreceived = receiveQty < bookingQty || receiveQty === 0;
-
-        headers.forEach((colName, c) => {
-          const cellRef = XLSX.utils.encode_cell({ r, c });
-          if (!ws[cellRef]) return;
-
-          const isBookingQtyCol = colName === 'Booking Qty (Pcs)';
-          const isColourCol = colName === 'Colour';
-          const isNumericCol = ['Booking Qty (Pcs)', 'Receive Qty (Pcs)', 'Issue Qty (Pcs)', 'Balance Qty (Pcs)'].includes(colName);
-          const isCenterCol = ['SL', 'Booking Date', 'Receive Date', 'Issue Date', 'CM', 'YDS'].includes(colName);
-
-          let fgColor = rowIdx % 2 === 0 ? 'FFFFFF' : 'F9FAFB';
-          let fontColor = '1F2937';
-          let isBold = false;
-
-          // Apply Yellow Highlights for Unreceived Bookings ONLY on 'Booking Qty (Pcs)' and 'Colour'
-          if (isUnreceived) {
-            if (isBookingQtyCol) {
-              fgColor = 'FFFF00'; // Bright Yellow
-              fontColor = '991B1B'; // Dark Red
-              isBold = true;
-            } else if (isColourCol) {
-              fgColor = 'FFFF00'; // Bright Yellow
-              fontColor = '1F2937';
-              isBold = true;
-            }
-          }
-
-          ws[cellRef].s = {
-            fill: { fgColor: { rgb: fgColor } },
-            font: { name: 'Calibri', sz: 10, bold: isBold, color: { rgb: fontColor } },
-            border: thinBorder,
-            alignment: {
-              vertical: 'center',
-              horizontal: isNumericCol ? 'right' : (isCenterCol ? 'center' : 'left'),
-              wrapText: true
-            }
-          };
-        });
-      });
-
-      return ws;
-    };
-
-    const workbook = XLSX.utils.book_new();
-
-    // 1. All Twill Tapes Master Sheet
-    const wsMaster = createStyledWorksheet(filteredItems);
-    XLSX.utils.book_append_sheet(workbook, wsMaster, "All Twill Tapes");
-
-    // 2. Separate Sheets for Each Buyer
-    const buyerMap: Record<string, TwillTapeItem[]> = {};
-    filteredItems.forEach(item => {
-      const bName = (item.buyer_name || 'General Buyer').trim();
-      if (!buyerMap[bName]) {
-        buyerMap[bName] = [];
-      }
-      buyerMap[bName].push(item);
+    generateCompanyMultiSheetExcel<any>({
+      moduleName: 'Twill Tape',
+      fileNamePrefix: 'twill_tape_inventory',
+      data: formattedData,
+      columns,
+      getBuyerName: (item: any) => item.buyer_name || 'General Buyer',
+      getBookingQty: (item: any) => Number(item.booking_qty) || 0,
+      getReceiveQty: (item: any) => Number(item.receive_qty) || 0,
+      isUnreceived: (item: any) => (Number(item.receive_qty) || 0) < (Number(item.booking_qty) || 0) || (Number(item.receive_qty) || 0) === 0
     });
 
-    Object.keys(buyerMap).forEach(bName => {
-      const buyerItems = buyerMap[bName];
-      const wsBuyer = createStyledWorksheet(buyerItems);
-
-      let safeName = bName.replace(/[:\\/?*\[\]]/g, '').trim().slice(0, 30);
-      if (!safeName) safeName = 'Buyer';
-
-      let finalSheetName = safeName;
-      let counter = 1;
-      while (workbook.SheetNames.includes(finalSheetName)) {
-        finalSheetName = `${safeName.slice(0, 25)}_${counter}`;
-        counter++;
-      }
-
-      XLSX.utils.book_append_sheet(workbook, wsBuyer, finalSheetName);
-    });
-
-    XLSX.writeFile(workbook, `twill_tape_inventory_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    showToast(`Downloaded Excel sheet with buyer tabs & yellow highlighted unreceived items!`, "success");
+    showToast(`Downloaded Twill Tape Excel with GMS Header, Buyer tabs & yellow highlighted unreceived items!`, "success");
   };
 
   const exportToCSV = () => {

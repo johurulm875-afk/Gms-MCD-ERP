@@ -24,15 +24,16 @@ export function getItemRowStyle(bookingQty: number | string, receiveQty: number 
       pendingCellClass: 'bg-amber-200 text-amber-950 font-black border border-amber-400 rounded px-2 py-0.5 shadow-2xs'
     };
   } else if (status === 'PARTIAL') {
-    // 🔵 LIGHT BLUE: Clean white row background with blue indicator
+    // 🟠 ORANGE: Clean white row background with orange indicator & badge for Partial Receive (Received less than Booked)
     return {
-      rowBg: 'bg-white hover:bg-blue-50/50 text-slate-900 border-l-4 border-l-blue-500 transition-colors',
-      badgeClass: 'bg-blue-100 text-blue-950 font-bold px-2.5 py-0.5 rounded-full border border-blue-300 text-xs inline-flex items-center gap-1.5 shadow-xs',
-      statusLabel: 'Partial Receive (Blue)',
-      dotColor: 'bg-blue-500',
-      code: 'BLUE',
+      rowBg: 'bg-white hover:bg-orange-50/60 text-slate-900 border-l-4 border-l-orange-500 transition-colors',
+      badgeClass: 'bg-orange-100 text-orange-950 font-bold px-2.5 py-0.5 rounded-full border border-orange-300 text-xs inline-flex items-center gap-1.5 shadow-xs',
+      statusLabel: 'Partial Receive / Shortage (Orange)',
+      dotColor: 'bg-orange-500',
+      code: 'ORANGE',
       isPendingYellow: false,
-      pendingCellClass: ''
+      isPartialOrange: true,
+      pendingCellClass: 'bg-orange-200 text-orange-950 font-black border border-orange-400 rounded px-2 py-0.5 shadow-2xs'
     };
   } else {
     // ⚪ WHITE: bg-white (Balance 0 / Fully received / fulfilled)
