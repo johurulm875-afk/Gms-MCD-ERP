@@ -502,7 +502,15 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
         i.remarks || ''
       ]);
 
-      const wsSewing = XLSX.utils.aoa_to_sheet([sewingHeaders, ...sewingRows]);
+      const wsSewing = XLSX.utils.aoa_to_sheet([
+        sewingHeaders, 
+        ...sewingRows,
+        [],
+        ['SEWING THREAD QC NOT OK GRAND TOTAL', '', '', '', '', '', '', '', '', '', '', '', 
+          filteredSewingQcNotOk.reduce((s, i) => s + (Number(i.booking_qty) || 0), 0), '', '', 
+          filteredSewingQcNotOk.reduce((s, i) => s + (Number(i.receive_qty) || 0), 0), '', '', '', 
+          filteredSewingQcNotOk.reduce((s, i) => s + (Number(i.balance_qty) || 0), 0), '', '', '']
+      ]);
       XLSX.utils.book_append_sheet(wb, wsSewing, 'Sewing Thread QC NOT OK');
     }
 
@@ -533,7 +541,15 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
         i.remarks || ''
       ]);
 
-      const wsDs = XLSX.utils.aoa_to_sheet([dsHeaders, ...dsRows]);
+      const wsDs = XLSX.utils.aoa_to_sheet([
+        dsHeaders, 
+        ...dsRows,
+        [],
+        ['DRAWSTRING QC NOT OK GRAND TOTAL', '', '', '', '', '', '', '', '', '', 
+          filteredDrawstringQcNotOk.reduce((s, i) => s + (Number(i.booking_qty) || 0), 0), 
+          filteredDrawstringQcNotOk.reduce((s, i) => s + (Number(i.receive_qty || i.rcv_qty) || 0), 0), 
+          filteredDrawstringQcNotOk.reduce((s, i) => s + (Number(i.balance_qty || i.due_qty) || 0), 0), '', '', '', '']
+      ]);
       XLSX.utils.book_append_sheet(wb, wsDs, 'Drawstring QC NOT OK');
     }
 
@@ -1084,268 +1100,358 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
       )}
 
       {/* VIEW SECTION 2: QC NOT OK REPORT TAB */}
-      {activeTab === 'qc_not_ok' && (
-        <div className="space-y-6">
+      {activeTab === 'qc_not_ok' && (() => {
+        const sewingQcWoTotal = filteredSewingQcNotOk.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0);
+        const sewingQcRecvTotal = filteredSewingQcNotOk.reduce((acc, i) => acc + (Number(i.receive_qty) || 0), 0);
+        const sewingQcBalTotal = filteredSewingQcNotOk.reduce((acc, i) => acc + (Number(i.balance_qty) || 0), 0);
 
-          {/* KPI STAT CARDS FOR QC NOT OK */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className={`p-4 rounded-2xl border flex items-center justify-between ${
-              isLight ? 'bg-rose-50/80 border-rose-200 text-rose-950' : 'bg-rose-950/40 border-rose-900/60 text-rose-100'
-            }`}>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Total QC NOT OK</p>
-                <h3 className="text-2xl font-black mt-0.5">{totalQcNotOkCount} Records</h3>
+        const dsQcWoTotal = filteredDrawstringQcNotOk.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0);
+        const dsQcRecvTotal = filteredDrawstringQcNotOk.reduce((acc, i) => acc + (Number(i.receive_qty || i.rcv_qty) || 0), 0);
+        const dsQcBalTotal = filteredDrawstringQcNotOk.reduce((acc, i) => acc + (Number(i.balance_qty || i.due_qty) || 0), 0);
+
+        const grandQcWoTotal = (qcCategory === 'DRAWSTRING' ? 0 : sewingQcWoTotal) + (qcCategory === 'SEWING' ? 0 : dsQcWoTotal);
+        const grandQcRecvTotal = (qcCategory === 'DRAWSTRING' ? 0 : sewingQcRecvTotal) + (qcCategory === 'SEWING' ? 0 : dsQcRecvTotal);
+        const grandQcBalTotal = (qcCategory === 'DRAWSTRING' ? 0 : sewingQcBalTotal) + (qcCategory === 'SEWING' ? 0 : dsQcBalTotal);
+
+        return (
+          <div className="space-y-6">
+
+            {/* KPI STAT CARDS FOR QC NOT OK */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                isLight ? 'bg-rose-50/80 border-rose-200 text-rose-950' : 'bg-rose-950/40 border-rose-900/60 text-rose-100'
+              }`}>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Total QC NOT OK</p>
+                  <h3 className="text-2xl font-black mt-0.5">{totalQcNotOkCount} Records</h3>
+                </div>
+                <div className="p-3 rounded-xl bg-rose-500/20 text-rose-600 dark:text-rose-300">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
               </div>
-              <div className="p-3 rounded-xl bg-rose-500/20 text-rose-600 dark:text-rose-300">
-                <ShieldAlert className="w-6 h-6" />
+
+              <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                isLight ? 'bg-blue-50/80 border-blue-200 text-blue-950' : 'bg-blue-950/40 border-blue-900/60 text-blue-100'
+              }`}>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Total WO Qty</p>
+                  <h3 className="text-2xl font-black font-mono mt-0.5 text-blue-600 dark:text-blue-400">{grandQcWoTotal.toLocaleString()}</h3>
+                </div>
+                <div className="p-3 rounded-xl bg-blue-500/20 text-blue-600 dark:text-blue-300">
+                  <Layers className="w-6 h-6" />
+                </div>
+              </div>
+
+              <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                isLight ? 'bg-teal-50/80 border-teal-200 text-teal-950' : 'bg-teal-950/40 border-teal-900/60 text-teal-100'
+              }`}>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400">Total Recv Qty</p>
+                  <h3 className="text-2xl font-black font-mono mt-0.5 text-teal-600 dark:text-teal-400">{grandQcRecvTotal.toLocaleString()}</h3>
+                </div>
+                <div className="p-3 rounded-xl bg-teal-500/20 text-teal-600 dark:text-teal-300">
+                  <Package className="w-6 h-6" />
+                </div>
+              </div>
+
+              <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                isLight ? 'bg-rose-100/80 border-rose-300 text-rose-950' : 'bg-rose-900/60 border-rose-700 text-rose-100'
+              }`}>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Total Balance Qty</p>
+                  <h3 className="text-2xl font-black font-mono mt-0.5 text-rose-600 dark:text-rose-300 animate-pulse">
+                    {grandQcBalTotal.toLocaleString()}
+                  </h3>
+                </div>
+                <div className="p-3 rounded-xl bg-rose-600/30 text-rose-600 dark:text-rose-300 border border-rose-500/30">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
               </div>
             </div>
 
-            <div className={`p-4 rounded-2xl border flex items-center justify-between ${
-              isLight ? 'bg-blue-50/80 border-blue-200 text-blue-950' : 'bg-blue-950/40 border-blue-900/60 text-blue-100'
-            }`}>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Sewing Thread NOT OK</p>
-                <h3 className="text-2xl font-black mt-0.5">{sewingQcNotOkItems.length} Items</h3>
-              </div>
-              <div className="p-3 rounded-xl bg-blue-500/20 text-blue-600 dark:text-blue-300">
-                <Layers className="w-6 h-6" />
-              </div>
-            </div>
+            {/* QC NOT OK FILE GRAND TOTAL SUMMARY BANNER */}
+            {totalQcNotOkCount > 0 && (
+              <div className="p-5 rounded-3xl border shadow-md flex flex-col md:flex-row items-center justify-between gap-4 bg-gradient-to-r from-rose-900 via-rose-950 to-slate-900 text-white border-rose-800/60">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-rose-600/30 text-rose-300 border border-rose-500/40 animate-pulse">
+                    <ShieldAlert className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white uppercase tracking-wider">
+                        File Summary
+                      </span>
+                      <span className="text-xs text-rose-300 font-medium">({totalQcNotOkCount} Non-Conforming Records)</span>
+                    </div>
+                    <h3 className="text-lg font-black tracking-wide text-white mt-0.5">
+                      QC NOT OK FILE GRAND TOTAL
+                    </h3>
+                  </div>
+                </div>
 
-            <div className={`p-4 rounded-2xl border flex items-center justify-between ${
-              isLight ? 'bg-teal-50/80 border-teal-200 text-teal-950' : 'bg-teal-950/40 border-teal-900/60 text-teal-100'
-            }`}>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400">Drawstring NOT OK</p>
-                <h3 className="text-2xl font-black mt-0.5">{drawstringQcNotOkItems.length} Items</h3>
-              </div>
-              <div className="p-3 rounded-xl bg-teal-500/20 text-teal-600 dark:text-teal-300">
-                <Package className="w-6 h-6" />
-              </div>
-            </div>
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
+                  <div className="px-4 py-2 rounded-2xl bg-slate-900/80 border border-slate-700/80 text-center min-w-[120px]">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">WO Qty</p>
+                    <p className="text-lg font-black font-mono text-blue-400">{grandQcWoTotal.toLocaleString()}</p>
+                  </div>
 
-            <div className={`p-4 rounded-2xl border flex items-center justify-between ${
-              isLight ? 'bg-amber-50/80 border-amber-200 text-amber-950' : 'bg-amber-950/40 border-amber-900/60 text-amber-100'
-            }`}>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Affected Booking Qty</p>
-                <h3 className="text-2xl font-black mt-0.5">
-                  {(
-                    sewingQcNotOkItems.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0) +
-                    drawstringQcNotOkItems.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0)
-                  ).toLocaleString()}
+                  <div className="px-4 py-2 rounded-2xl bg-slate-900/80 border border-slate-700/80 text-center min-w-[120px]">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recv Qty</p>
+                    <p className="text-lg font-black font-mono text-emerald-400">{grandQcRecvTotal.toLocaleString()}</p>
+                  </div>
+
+                  <div className="px-4 py-2 rounded-2xl bg-rose-950/80 border border-rose-600 text-center min-w-[140px] shadow-lg shadow-rose-950/50">
+                    <p className="text-[10px] font-bold text-rose-300 uppercase tracking-wider">Balance Qty</p>
+                    <p className="text-xl font-black font-mono text-rose-400">
+                      {grandQcBalTotal.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* EMPTY STATE */}
+            {totalQcNotOkCount === 0 && (
+              <div className={`p-12 rounded-3xl border text-center space-y-3 ${
+                isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+              }`}>
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto border border-emerald-500/20">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">
+                  No QC NOT OK Items Found
                 </h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  সব আইটেম বর্তমানে QC OK অবস্থায় আছে। Sewing Thread বা Drawstring মেইন শিট থেকে কোনো আইটেমে "QC NOT OK" সিলেক্ট করলে তা অটোমেটিক্যালি এই রিপোর্টে চলে আসবে।
+                </p>
               </div>
-              <div className="p-3 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-300">
-                <AlertTriangle className="w-6 h-6" />
+            )}
+
+            {/* TABLE SECTION 1: SEWING THREAD QC NOT OK */}
+            {(qcCategory === 'ALL' || qcCategory === 'SEWING') && filteredSewingQcNotOk.length > 0 && (
+              <div className={`rounded-3xl border overflow-hidden shadow-sm ${
+                isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+              }`}>
+                <div className="p-4 bg-blue-950 text-white flex items-center justify-between border-b border-blue-900">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
+                    <h3 className="text-sm font-black tracking-wide text-blue-200 flex items-center gap-2">
+                      <span>🧵 Sewing Thread QC NOT OK Items</span>
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-mono">
+                        {filteredSewingQcNotOk.length} items
+                      </span>
+                    </h3>
+                  </div>
+                  <span className="text-xs text-slate-400">Main Sewing Thread File Columns</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className={`text-[11px] uppercase tracking-wider font-extrabold border-b ${
+                      isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-950 text-slate-300 border-slate-800'
+                    }`}>
+                      <tr>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Buyer</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Date</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Job No</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Style</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Order/PO No</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">SR/GT No</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Thread Ref</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Thread Spec/Count</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Meter</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Per Body Consm</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Colour</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Shade/Pantone</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">WO Qty</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Recv Qty</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Balance Qty</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Supplier</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-center">QC Status</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Remarks</th>
+                        <th className="py-3 px-2 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
+                      {filteredSewingQcNotOk.map((item) => (
+                        <tr 
+                          key={item.id}
+                          className={`transition-colors bg-rose-500/5 hover:bg-rose-500/10 ${
+                            isLight ? 'text-slate-800' : 'text-slate-200'
+                          }`}
+                        >
+                          <td className="py-2.5 px-2 font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.date || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.job_no || '-'}</td>
+                          <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.style}>{item.style || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.order_no || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.sr_gt || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.s_thread_ref || item.store_ref || '-'}</td>
+                          <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.count || item.thread_count || item.item_name}>{item.count || item.thread_count || item.item_name || '-'}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.meter || '-'}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.per_body_consm || '-'}</td>
+                          <td className="py-2.5 px-2 font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.colour || item.color || '-'}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.shade_no || item.pantone || '-'}</td>
+                          <td className="py-2.5 px-2 text-right font-black font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.booking_qty?.toLocaleString() ?? 0}</td>
+                          <td className="py-2.5 px-2 text-right font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.receive_qty?.toLocaleString() ?? 0}</td>
+                          <td className="py-2.5 px-2 text-right font-black font-mono text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.balance_qty?.toLocaleString() ?? 0}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.supplier || '-'}</td>
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm border border-rose-600">
+                              QC NOT OK
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2 text-slate-500 max-w-[130px] truncate border-r border-slate-300 dark:border-slate-800" title={item.remarks}>{item.remarks || '-'}</td>
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                            <button
+                              onClick={() => handleResolveSewingQc(item)}
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg transition-all shadow cursor-pointer flex items-center gap-1 mx-auto"
+                              title="Mark as QC OK & return to normal list"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Mark QC OK</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className={`font-black uppercase tracking-wider text-xs border-t-2 ${
+                      isLight ? 'bg-slate-100 text-slate-900 border-slate-300' : 'bg-slate-950 text-slate-100 border-slate-800'
+                    }`}>
+                      <tr>
+                        <td colSpan={12} className="py-3 px-3 text-right font-black border-r border-slate-300 dark:border-slate-800">
+                          SEWING THREAD QC NOT OK GRAND TOTAL:
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800 text-blue-600 dark:text-blue-400">
+                          {sewingQcWoTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800 text-emerald-600 dark:text-emerald-400">
+                          {sewingQcRecvTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800 text-rose-600 dark:text-rose-400 bg-rose-100/60 dark:bg-rose-950/60">
+                          {sewingQcBalTotal.toLocaleString()}
+                        </td>
+                        <td colSpan={4} className="py-3 px-2"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* TABLE SECTION 2: DRAWSTRING QC NOT OK */}
+            {(qcCategory === 'ALL' || qcCategory === 'DRAWSTRING') && filteredDrawstringQcNotOk.length > 0 && (
+              <div className={`rounded-3xl border overflow-hidden shadow-sm ${
+                isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+              }`}>
+                <div className="p-4 bg-teal-950 text-white flex items-center justify-between border-b border-teal-900">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
+                    <h3 className="text-sm font-black tracking-wide text-teal-200 flex items-center gap-2">
+                      <span>🧶 Drawstring QC NOT OK Items</span>
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-mono">
+                        {filteredDrawstringQcNotOk.length} items
+                      </span>
+                    </h3>
+                  </div>
+                  <span className="text-xs text-slate-400">Drawstring Main File Columns</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className={`text-[11px] uppercase tracking-wider font-extrabold border-b ${
+                      isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-950 text-slate-300 border-slate-800'
+                    }`}>
+                      <tr>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Buyer</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Booking Date</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Job No</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Style</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">SR/GT No</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Store Ref</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">PO No</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Item Name</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Color</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Size</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Booking Qty</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Recv Qty</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Due Qty</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Recv Date</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Supplier</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-center">QC Status</th>
+                        <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Remarks</th>
+                        <th className="py-3 px-2 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
+                      {filteredDrawstringQcNotOk.map((item) => (
+                        <tr 
+                          key={item.id}
+                          className={`transition-colors bg-rose-500/5 hover:bg-rose-500/10 ${
+                            isLight ? 'text-slate-800' : 'text-slate-200'
+                          }`}
+                        >
+                          <td className="py-2.5 px-2 font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.booking_date || item.date || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.ref_no_job_no || item.job_no || '-'}</td>
+                          <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.style}>{item.style || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.sr_gt_no || item.sr_gt || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.store_ref || item.s_thread_ref || '-'}</td>
+                          <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.po_no || item.order_no || '-'}</td>
+                          <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.item_name || item.drawstring_type}>{item.item_name || item.drawstring_type || '-'}</td>
+                          <td className="py-2.5 px-2 font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.colour || item.color || '-'}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.size || item.size_mm || '-'}</td>
+                          <td className="py-2.5 px-2 text-right font-black font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.booking_qty?.toLocaleString() ?? 0}</td>
+                          <td className="py-2.5 px-2 text-right font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{(item.receive_qty || item.rcv_qty || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-2 text-right font-black font-mono text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{(item.balance_qty || item.due_qty || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.rcvd_date || item.receive_date || '-'}</td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.supplier || '-'}</td>
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm border border-rose-600">
+                              QC NOT OK
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2 text-slate-500 max-w-[130px] truncate border-r border-slate-300 dark:border-slate-800" title={item.remarks}>{item.remarks || '-'}</td>
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                            <button
+                              onClick={() => handleResolveDrawstringQc(item)}
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg transition-all shadow cursor-pointer flex items-center gap-1 mx-auto"
+                              title="Mark as QC OK & return to normal list"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Mark QC OK</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className={`font-black uppercase tracking-wider text-xs border-t-2 ${
+                      isLight ? 'bg-slate-100 text-slate-900 border-slate-300' : 'bg-slate-950 text-slate-100 border-slate-800'
+                    }`}>
+                      <tr>
+                        <td colSpan={10} className="py-3 px-3 text-right font-black border-r border-slate-300 dark:border-slate-800">
+                          DRAWSTRING QC NOT OK GRAND TOTAL:
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800 text-blue-600 dark:text-blue-400">
+                          {dsQcWoTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800 text-emerald-600 dark:text-emerald-400">
+                          {dsQcRecvTotal.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800 text-rose-600 dark:text-rose-400 bg-rose-100/60 dark:bg-rose-950/60">
+                          {dsQcBalTotal.toLocaleString()}
+                        </td>
+                        <td colSpan={5} className="py-3 px-2"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
           </div>
-
-          {/* EMPTY STATE */}
-          {totalQcNotOkCount === 0 && (
-            <div className={`p-12 rounded-3xl border text-center space-y-3 ${
-              isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
-            }`}>
-              <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto border border-emerald-500/20">
-                <CheckCircle2 className="w-8 h-8" />
-              </div>
-              <h3 className="text-lg font-black text-slate-800 dark:text-slate-100">
-                No QC NOT OK Items Found
-              </h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                সব আইটেম বর্তমানে QC OK অবস্থায় আছে। Sewing Thread বা Drawstring মেইন শিট থেকে কোনো আইটেমে "QC NOT OK" সিলেক্ট করলে তা অটোমেটিক্যালি এই রিপোর্টে চলে আসবে।
-              </p>
-            </div>
-          )}
-
-          {/* TABLE SECTION 1: SEWING THREAD QC NOT OK */}
-          {(qcCategory === 'ALL' || qcCategory === 'SEWING') && filteredSewingQcNotOk.length > 0 && (
-            <div className={`rounded-3xl border overflow-hidden shadow-sm ${
-              isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
-            }`}>
-              <div className="p-4 bg-blue-950 text-white flex items-center justify-between border-b border-blue-900">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
-                  <h3 className="text-sm font-black tracking-wide text-blue-200 flex items-center gap-2">
-                    <span>🧵 Sewing Thread QC NOT OK Items</span>
-                    <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-mono">
-                      {filteredSewingQcNotOk.length} items
-                    </span>
-                  </h3>
-                </div>
-                <span className="text-xs text-slate-400">Main Sewing Thread File Columns</span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className={`text-[11px] uppercase tracking-wider font-extrabold border-b ${
-                    isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-950 text-slate-300 border-slate-800'
-                  }`}>
-                    <tr>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Buyer</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Date</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Job No</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Style</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Order/PO No</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">SR/GT No</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Thread Ref</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Thread Spec/Count</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Meter</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Per Body Consm</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Colour</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Shade/Pantone</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">WO Qty</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Recv Qty</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Balance Qty</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Supplier</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-center">QC Status</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Remarks</th>
-                      <th className="py-3 px-2 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                    {filteredSewingQcNotOk.map((item) => (
-                      <tr 
-                        key={item.id}
-                        className={`transition-colors bg-rose-500/5 hover:bg-rose-500/10 ${
-                          isLight ? 'text-slate-800' : 'text-slate-200'
-                        }`}
-                      >
-                        <td className="py-2.5 px-2 font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.date || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.job_no || '-'}</td>
-                        <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.style}>{item.style || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.order_no || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.sr_gt || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.s_thread_ref || item.store_ref || '-'}</td>
-                        <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.count || item.thread_count || item.item_name}>{item.count || item.thread_count || item.item_name || '-'}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.meter || '-'}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.per_body_consm || '-'}</td>
-                        <td className="py-2.5 px-2 font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.colour || item.color || '-'}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.shade_no || item.pantone || '-'}</td>
-                        <td className="py-2.5 px-2 text-right font-black font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.booking_qty?.toLocaleString() ?? 0}</td>
-                        <td className="py-2.5 px-2 text-right font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.receive_qty?.toLocaleString() ?? 0}</td>
-                        <td className="py-2.5 px-2 text-right font-black font-mono text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.balance_qty?.toLocaleString() ?? 0}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.supplier || '-'}</td>
-                        <td className="py-2.5 px-2 text-center whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm border border-rose-600">
-                            QC NOT OK
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-2 text-slate-500 max-w-[130px] truncate border-r border-slate-300 dark:border-slate-800" title={item.remarks}>{item.remarks || '-'}</td>
-                        <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                          <button
-                            onClick={() => handleResolveSewingQc(item)}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg transition-all shadow cursor-pointer flex items-center gap-1 mx-auto"
-                            title="Mark as QC OK & return to normal list"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Mark QC OK</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* TABLE SECTION 2: DRAWSTRING QC NOT OK */}
-          {(qcCategory === 'ALL' || qcCategory === 'DRAWSTRING') && filteredDrawstringQcNotOk.length > 0 && (
-            <div className={`rounded-3xl border overflow-hidden shadow-sm ${
-              isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
-            }`}>
-              <div className="p-4 bg-teal-950 text-white flex items-center justify-between border-b border-teal-900">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
-                  <h3 className="text-sm font-black tracking-wide text-teal-200 flex items-center gap-2">
-                    <span>🧶 Drawstring QC NOT OK Items</span>
-                    <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-mono">
-                      {filteredDrawstringQcNotOk.length} items
-                    </span>
-                  </h3>
-                </div>
-                <span className="text-xs text-slate-400">Drawstring Main File Columns</span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className={`text-[11px] uppercase tracking-wider font-extrabold border-b ${
-                    isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-950 text-slate-300 border-slate-800'
-                  }`}>
-                    <tr>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Buyer</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Booking Date</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Job No</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Style</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">SR/GT No</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Store Ref</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">PO No</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Item Name</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Color</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Size</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Booking Qty</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Recv Qty</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Due Qty</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Recv Date</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Supplier</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-center">QC Status</th>
-                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Remarks</th>
-                      <th className="py-3 px-2 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                    {filteredDrawstringQcNotOk.map((item) => (
-                      <tr 
-                        key={item.id}
-                        className={`transition-colors bg-rose-500/5 hover:bg-rose-500/10 ${
-                          isLight ? 'text-slate-800' : 'text-slate-200'
-                        }`}
-                      >
-                        <td className="py-2.5 px-2 font-bold text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.booking_date || item.date || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.ref_no_job_no || item.job_no || '-'}</td>
-                        <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.style}>{item.style || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.sr_gt_no || item.sr_gt || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.store_ref || item.s_thread_ref || '-'}</td>
-                        <td className="py-2.5 px-2 font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.po_no || item.order_no || '-'}</td>
-                        <td className="py-2.5 px-2 max-w-[150px] truncate border-r border-slate-300 dark:border-slate-800" title={item.item_name || item.drawstring_type}>{item.item_name || item.drawstring_type || '-'}</td>
-                        <td className="py-2.5 px-2 font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.colour || item.color || '-'}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.size || item.size_mm || '-'}</td>
-                        <td className="py-2.5 px-2 text-right font-black font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.booking_qty?.toLocaleString() ?? 0}</td>
-                        <td className="py-2.5 px-2 text-right font-bold whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{(item.receive_qty || item.rcv_qty || 0).toLocaleString()}</td>
-                        <td className="py-2.5 px-2 text-right font-black font-mono text-rose-600 dark:text-rose-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{(item.balance_qty || item.due_qty || 0).toLocaleString()}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.rcvd_date || item.receive_date || '-'}</td>
-                        <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">{item.supplier || '-'}</td>
-                        <td className="py-2.5 px-2 text-center whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm border border-rose-600">
-                            QC NOT OK
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-2 text-slate-500 max-w-[130px] truncate border-r border-slate-300 dark:border-slate-800" title={item.remarks}>{item.remarks || '-'}</td>
-                        <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                          <button
-                            onClick={() => handleResolveDrawstringQc(item)}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg transition-all shadow cursor-pointer flex items-center gap-1 mx-auto"
-                            title="Mark as QC OK & return to normal list"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Mark QC OK</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-        </div>
-      )}
+        );
+      })()}
 
       {/* VIEW SECTION 3: ALL SEWING THREAD REPORT TAB */}
       {activeTab === 'sewing' && (
