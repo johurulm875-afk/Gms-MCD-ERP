@@ -658,7 +658,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                           {item.pantone && <span className="text-[11px] font-mono text-emerald-300">{item.pantone}</span>}
                         </div>
                         <div className="font-extrabold text-amber-300 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-500/30">
-                          {cleanQty} Cone/Yds
+                          {cleanQty} Cones
                         </div>
                       </div>
                     );

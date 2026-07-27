@@ -2330,9 +2330,11 @@ export default function App() {
           {(activeTab === 'report' || activeTab === 'drawstring_report') && (
             <DrawstringReport
               items={drawstringItems}
+              sewingItems={sewingThreadItems}
               theme={theme}
               currentUser={currentUser}
               onUpdateItem={handleUpdateDrawstringItem}
+              onUpdateSewingItem={handleUpdateSewingBooking}
               onDeleteItem={handleDeleteDrawstringItem}
             />
           )}

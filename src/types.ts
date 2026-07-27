@@ -136,6 +136,8 @@ export interface DrawstringItem {
   issue_qty?: number;
   issue_date?: string;
   issue_challan?: string;
+  supplier?: string;
+  qc_not_ok?: boolean | string;
   remarks: string;
   receive_logs?: TransactionLog[];
   issue_logs?: TransactionLog[];
