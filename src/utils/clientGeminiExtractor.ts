@@ -25,40 +25,31 @@ export async function extractPdfClientSide(
   }
 
   const promptText = `
-You are an expert Data Extraction AI for Garments Drawstring Booking Reports.
-Your task is to analyze the uploaded PDF Work Order / Booking Report and extract every single drawstring booking line item.
-Map the extracted data EXACTLY into the JSON schema matching the Supabase table structure (\`supabase_drawstring_all_rows\`).
+You are an expert Data Extraction AI for Garments Drawstring Booking Reports V2 / Work Orders.
+Your task is to analyze the uploaded PDF Work Order / Booking Report and extract EVERY SINGLE drawstring booking line item across ALL pages.
 
-### Output Schema Rules:
-- Return ONLY a valid JSON Array of objects. Do not wrap in extra markdown or plain text explanations.
-- Extract each row representing an individual drawstring color/size/quantity booking.
+### Document Hierarchy & Field Extraction Rules:
+1. Header Info (Common to all items in document unless specified):
+   - Buyer Name -> "buyer" (e.g., "Bestseller A/S", "STANLEY STELLA")
+   - Booking No / Trims Ref -> "s_thread_ref" (e.g., "GMST-TB-26-00782")
+   - Supplier Name -> "supplier" (e.g., "Gms Trims Limited")
+   - Booking Date -> "booking_date" (e.g., "14-07-2026")
 
-### JSON Fields to extract per line item:
-1. "buyer": String (Buyer Name from Header, e.g. "Bestseller A/S")
-2. "job_no": String (Job No, e.g. "GMST-26-01543")
-3. "style": String (Combine Style Ref and Style Desc, e.g. "12137054 - JJECORP OLD LOGO SWEAT HOOD NOOS")
-4. "order_no": String (PO No, e.g. "GMT4728405")
-5. "sr_gt": String (Fabric Booking No, e.g. "GMST-FB-26-01361")
-6. "s_thread_ref": String (Trims / Drawstring Booking No, e.g. "GMST-TB-26-00782")
-7. "count": String (Item Description / Specification, e.g. "1 cm cotton Flat drawstring with Plastic tips Length 120 Cm")
-8. "meter": String or null (Item Size / Finish Length, e.g. "120 CM" or "118 CM")
-9. "per_body_consm": Number or null (Cost/Dzn Rate or Consumption rate)
-10. "colour": String (Item Color / Garment Color, e.g. "LIGHT GREY MELANGE")
-11. "pantone": String or null (Pantone code or Garment Size if specified, e.g. "XS", "S", "M")
-12. "booking_qty": Number (WO Qty / Order Quantity)
-13. "rcvd_date": null
-14. "rcvd_challan": null
-15. "receive_qty": 0
-16. "issue_date": null
-17. "issue_challan": null
-18. "issue_qty": 0
-19. "balance_qty": Number (Same value as "booking_qty")
-20. "supplier": String (Supplier Name from Header, e.g. "Gms Trims Limited")
-21. "qc_not_ok": null
-22. "remarks": String or null (Line remarks if present)
+2. Job Section Header (Each section in PDF has its own Job details):
+   - Job NO -> "job_no" (e.g., "GMST-26-01543")
+   - Fabric Booking No -> "sr_gt" (e.g., "GMST-FB-26-01361")
+   - PO No -> "order_no" (e.g., "GMT4728405")
+   - Style Ref & Desc -> "style" (e.g., "12137054 - JJECORP OLD LOGO SWEAT HOOD NOOS")
 
-### Execution:
-Analyze the input PDF thoroughly across all pages, create a record for each item row, and return the complete JSON Array.
+3. Table Line Items (Extract one JSON object per table row):
+   - Item Description -> "count" (e.g., "1 cm cotton Flat drawstring with Plastic tips Length 120 Cm")
+   - Gmts Color / Item Color -> "colour" (e.g., "LIGHT GREY MELANGE", "WHITE", "NAVY BLAZER", "PREMIUM BLACK")
+   - Item Size / Finish Length -> "meter" (e.g., "120 CM", "118 CM", "114 CM")
+   - Gmts Size -> "pantone" (e.g., "XS", "S", "M", "L", "XL", "XXL")
+   - WO Qty / Booking Qty -> "booking_qty" (Extract clean numeric quantity, e.g., 20, 123, 285, 410, 308, 183)
+   - Line Remarks -> "remarks" (Any row remarks if present)
+
+Analyze all pages thoroughly. Extract EVERY single row in the tables into the JSON Array.
 `;
 
   const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
@@ -88,26 +79,18 @@ Analyze the input PDF thoroughly across all pages, create a record for each item
               type: Type.OBJECT,
               properties: {
                 buyer: { type: Type.STRING },
+                booking_date: { type: Type.STRING },
                 job_no: { type: Type.STRING },
-                style: { type: Type.STRING },
-                order_no: { type: Type.STRING },
                 sr_gt: { type: Type.STRING },
+                order_no: { type: Type.STRING },
                 s_thread_ref: { type: Type.STRING },
+                style: { type: Type.STRING },
                 count: { type: Type.STRING },
-                meter: { type: Type.STRING },
-                per_body_consm: { type: Type.NUMBER },
                 colour: { type: Type.STRING },
+                meter: { type: Type.STRING },
                 pantone: { type: Type.STRING },
                 booking_qty: { type: Type.NUMBER },
-                rcvd_date: { type: Type.STRING },
-                rcvd_challan: { type: Type.STRING },
-                receive_qty: { type: Type.NUMBER },
-                issue_date: { type: Type.STRING },
-                issue_challan: { type: Type.STRING },
-                issue_qty: { type: Type.NUMBER },
-                balance_qty: { type: Type.NUMBER },
                 supplier: { type: Type.STRING },
-                qc_not_ok: { type: Type.BOOLEAN },
                 remarks: { type: Type.STRING },
               },
             },
@@ -134,12 +117,46 @@ Analyze the input PDF thoroughly across all pages, create a record for each item
     parsedData = JSON.parse(textOutput);
     if (Array.isArray(parsedData)) {
       parsedData = parsedData.map((item: any) => {
-        const rawBQty = Number(item.booking_qty) || 0;
+        const rawBQty = Number(item.booking_qty || item.wo_qty || item.order_qty) || 0;
         const cleanBQty = Math.round((rawBQty + Number.EPSILON) * 100) / 100;
+
+        const colorVal = (item.colour || item.color || item.gmts_color || item.item_color || '').toString().trim();
+        const countVal = (item.count || item.item_name || item.item_description || item.description || 'DRAWSTRING').toString().trim();
+        const meterVal = (item.meter || item.item_size || item.size || '114 CM').toString().trim();
+        const jobNoVal = (item.job_no || item.ref_no_job_no || '').toString().trim();
+        const srGtVal = (item.sr_gt || item.sr_gt_no || item.fabric_booking_no || '').toString().trim();
+        const poNoVal = (item.order_no || item.po_no || '').toString().trim();
+        const buyerVal = (item.buyer || item.buyer_name || 'BESTSELLER A/S').toString().trim();
+        const storeRefVal = (item.s_thread_ref || item.store_ref || item.booking_no || '').toString().trim();
+
         return {
-          ...item,
+          buyer: buyerVal,
+          buyer_name: buyerVal,
+          booking_date: item.booking_date || item.date || '',
+          job_no: jobNoVal,
+          ref_no_job_no: jobNoVal,
+          sr_gt: srGtVal,
+          sr_gt_no: srGtVal,
+          order_no: poNoVal,
+          po_no: poNoVal,
+          s_thread_ref: storeRefVal,
+          store_ref: storeRefVal,
+          style: item.style || '',
+          count: countVal,
+          item_name: countVal,
+          colour: colorVal,
+          color: colorVal,
+          meter: meterVal,
+          size: meterVal,
+          pantone: item.pantone || item.gmts_size || '',
           booking_qty: cleanBQty,
+          wo_qty: cleanBQty,
           balance_qty: cleanBQty,
+          due_qty: cleanBQty,
+          receive_qty: 0,
+          issue_qty: 0,
+          supplier: item.supplier || '',
+          remarks: item.remarks || ''
         };
       });
     }
