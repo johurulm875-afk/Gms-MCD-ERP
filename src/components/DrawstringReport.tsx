@@ -30,8 +30,8 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
 }) => {
   const isLight = theme === 'light';
 
-  // Active Report Tab: 'sewing_due' | 'qc_not_ok' | 'sewing' | 'drawstring'
-  const [activeTab, setActiveTab] = useState<'sewing_due' | 'qc_not_ok' | 'sewing' | 'drawstring'>('sewing_due');
+  // Active Report Tab: 'drawstring_due' | 'sewing_due' | 'qc_not_ok' | 'sewing' | 'drawstring'
+  const [activeTab, setActiveTab] = useState<'drawstring_due' | 'sewing_due' | 'qc_not_ok' | 'sewing' | 'drawstring'>('drawstring_due');
   
   // Filter within QC Not OK: 'ALL' | 'SEWING' | 'DRAWSTRING'
   const [qcCategory, setQcCategory] = useState<'ALL' | 'SEWING' | 'DRAWSTRING'>('ALL');
@@ -43,25 +43,39 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
 
   // Supabase direct fetched due items state for real-time backup
   const [supabaseDueItems, setSupabaseDueItems] = useState<SewingThreadItem[]>([]);
+  const [supabaseDsDueItems, setSupabaseDsDueItems] = useState<DrawstringItem[]>([]);
   const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
 
   // Function to fetch directly from Supabase table / view
   const fetchSupabaseDueData = async () => {
     setIsFetchingSupabase(true);
     try {
-      // Query supabase sewing_thread table or view where booking_qty > receive_qty
-      const { data, error } = await supabase
+      // 1. Query sewing_thread for due items
+      const { data: sewingData, error: sewingErr } = await supabase
         .from('sewing_thread')
         .select('*');
 
-      if (!error && data && data.length > 0) {
-        // Filter rows where booking_qty > receive_qty
-        const dueRows = data.filter((r: any) => {
+      if (!sewingErr && sewingData && sewingData.length > 0) {
+        const dueRows = sewingData.filter((r: any) => {
           const b = Number(r.booking_qty) || 0;
           const rec = Number(r.receive_qty) || 0;
           return b > rec;
         });
         setSupabaseDueItems(dueRows);
+      }
+
+      // 2. Query drawstring for due items
+      const { data: dsData, error: dsErr } = await supabase
+        .from('drawstring')
+        .select('*');
+
+      if (!dsErr && dsData && dsData.length > 0) {
+        const dueDs = dsData.filter((r: any) => {
+          const b = Number(r.booking_qty) || 0;
+          const rec = Number(r.receive_qty || r.rcv_qty) || 0;
+          return b > rec;
+        });
+        setSupabaseDsDueItems(dueDs);
       }
     } catch (e) {
       console.warn("Notice: Could not fetch due items directly from Supabase, using live state:", e);
@@ -74,7 +88,126 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
     fetchSupabaseDueData();
   }, []);
 
-  // 1. SEWING THREAD DUE / PENDING ITEMS (Main source synced real-time with sewingItems)
+  // 1. DRAWSTRING DUE / PENDING ITEMS
+  const drawstringDueItems = useMemo(() => {
+    const sourceList = items.length > 0 ? items : supabaseDsDueItems;
+    return sourceList.filter(item => {
+      const bQty = Number(item.booking_qty) || 0;
+      const rQty = Number(item.receive_qty ?? item.rcv_qty) || 0;
+      return bQty > rQty;
+    });
+  }, [items, supabaseDsDueItems]);
+
+  // Unique Buyers across Drawstring Due items
+  const dsDueBuyersList = useMemo(() => {
+    const set = new Set<string>();
+    drawstringDueItems.forEach(i => {
+      const b = i.buyer_name || i.buyer || '';
+      if (b) set.add(b.trim());
+    });
+    return Array.from(set).sort();
+  }, [drawstringDueItems]);
+
+  // Unique Styles across Drawstring Due items
+  const dsDueStylesList = useMemo(() => {
+    const set = new Set<string>();
+    drawstringDueItems.forEach(i => {
+      if (i.style) set.add(i.style.trim());
+    });
+    return Array.from(set).sort();
+  }, [drawstringDueItems]);
+
+  // Filtered Drawstring Due Items
+  const filteredDrawstringDueItems = useMemo(() => {
+    return drawstringDueItems.filter(i => {
+      const buyer = (i.buyer_name || i.buyer || '').toUpperCase();
+      if (selectedBuyer !== 'ALL' && buyer !== selectedBuyer.toUpperCase()) return false;
+
+      const style = (i.style || '').toUpperCase();
+      if (selectedStyle !== 'ALL' && style !== selectedStyle.toUpperCase()) return false;
+
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        buyer.toLowerCase().includes(term) ||
+        (i.ref_no_job_no || i.job_no || '').toLowerCase().includes(term) ||
+        (i.style || '').toLowerCase().includes(term) ||
+        (i.po_no || i.order_no || '').toLowerCase().includes(term) ||
+        (i.sr_gt_no || i.sr_gt || '').toLowerCase().includes(term) ||
+        (i.store_ref || i.s_thread_ref || '').toLowerCase().includes(term) ||
+        (i.drawstring_type || i.item_name || '').toLowerCase().includes(term) ||
+        (i.colour || i.color || '').toLowerCase().includes(term) ||
+        (i.size_mm || i.size || '').toLowerCase().includes(term) ||
+        (i.supplier || '').toLowerCase().includes(term)
+      );
+    });
+  }, [drawstringDueItems, selectedBuyer, selectedStyle, searchTerm]);
+
+  // Total Summary Metrics for Drawstring Due Report
+  const dsDueMetrics = useMemo(() => {
+    const totalDueItems = filteredDrawstringDueItems.length;
+    const uniqueJobsSet = new Set<string>();
+    const uniqueStylesSet = new Set<string>();
+    let totalBooking = 0;
+    let totalRecv = 0;
+    let totalDue = 0;
+
+    filteredDrawstringDueItems.forEach(i => {
+      const job = i.ref_no_job_no || i.job_no || '';
+      if (job) uniqueJobsSet.add(job.trim());
+      if (i.style) uniqueStylesSet.add(i.style.trim());
+      const b = Number(i.booking_qty) || 0;
+      const r = Number(i.receive_qty ?? i.rcv_qty) || 0;
+      totalBooking += b;
+      totalRecv += r;
+      totalDue += Math.max(0, b - r);
+    });
+
+    return {
+      totalDueItems,
+      totalPendingJobs: uniqueJobsSet.size,
+      totalPendingStyles: uniqueStylesSet.size,
+      totalBooking,
+      totalRecv,
+      totalDue
+    };
+  }, [filteredDrawstringDueItems]);
+
+  // Buyer-Wise Summary Breakdown for Drawstring Due Items
+  const dsBuyerWiseSummary = useMemo(() => {
+    const summaryMap: { [buyer: string]: { buyer: string; totalItems: number; stylesCount: Set<string>; totalBookingQty: number; totalRecvQty: number; totalDueQty: number } } = {};
+
+    filteredDrawstringDueItems.forEach(item => {
+      const buyerName = (item.buyer_name || item.buyer || 'Unassigned').trim();
+      const bQty = Number(item.booking_qty) || 0;
+      const rQty = Number(item.receive_qty ?? item.rcv_qty) || 0;
+      const dueQty = Math.max(0, bQty - rQty);
+
+      if (!summaryMap[buyerName]) {
+        summaryMap[buyerName] = {
+          buyer: buyerName,
+          totalItems: 0,
+          stylesCount: new Set<string>(),
+          totalBookingQty: 0,
+          totalRecvQty: 0,
+          totalDueQty: 0
+        };
+      }
+
+      summaryMap[buyerName].totalItems += 1;
+      if (item.style) summaryMap[buyerName].stylesCount.add(item.style.trim());
+      summaryMap[buyerName].totalBookingQty += bQty;
+      summaryMap[buyerName].totalRecvQty += rQty;
+      summaryMap[buyerName].totalDueQty += dueQty;
+    });
+
+    return Object.values(summaryMap).map(s => ({
+      ...s,
+      uniqueStyles: s.stylesCount.size
+    })).sort((a, b) => b.totalDueQty - a.totalDueQty);
+  }, [filteredDrawstringDueItems]);
+
+  // 2. SEWING THREAD DUE / PENDING ITEMS (Main source synced real-time with sewingItems)
   const sewingDueItems = useMemo(() => {
     // Combine local real-time state items with any items from Supabase
     const sourceList = sewingItems.length > 0 ? sewingItems : supabaseDueItems;
@@ -315,6 +448,157 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
         qc_not_ok: false
       });
     }
+  };
+
+  // Export Daily Drawstring Due Report to Excel
+  const handleExportDsDueExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Detailed Drawstring Due Rows
+    const headers = [
+      'Buyer Name', 'Booking Date', 'Job No / Ref No', 'Style', 'SR/GT No', 'Store Ref / Booking Ref', 
+      'PO No / Order No', 'Item Name / Drawstring Type', 'Color Name', 'Size (mm)', 'Unit',
+      'Total Booking Qty', 'Total Received Qty', 'Remaining Due Qty', 'Supplier', 'Remarks'
+    ];
+
+    const rows = filteredDrawstringDueItems.map(i => {
+      const bQty = Number(i.booking_qty) || 0;
+      const rQty = Number(i.receive_qty ?? i.rcv_qty) || 0;
+      const dueQty = Math.max(0, bQty - rQty);
+
+      return [
+        i.buyer_name || i.buyer || '',
+        i.booking_date || i.date || '',
+        i.ref_no_job_no || i.job_no || '',
+        i.style || '',
+        i.sr_gt_no || i.sr_gt || '',
+        i.store_ref || i.s_thread_ref || '',
+        i.po_no || i.order_no || '',
+        i.drawstring_type || i.item_name || '',
+        i.colour || i.color || '',
+        i.size_mm || i.size || '',
+        i.unit || 'PCS',
+        bQty,
+        rQty,
+        dueQty,
+        i.supplier || '',
+        i.remarks || ''
+      ];
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['DAILY DRAWSTRING DUE / PENDING REPORT'],
+      [`Generated Date: ${new Date().toLocaleDateString()} | Total Pending Items: ${dsDueMetrics.totalDueItems} | Total Due Qty: ${dsDueMetrics.totalDue.toLocaleString()}`],
+      [],
+      headers, 
+      ...rows,
+      [],
+      ['TOTALS', '', '', '', '', '', '', '', '', '', '', dsDueMetrics.totalBooking, dsDueMetrics.totalRecv, dsDueMetrics.totalDue, '', '']
+    ]);
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Drawstring Due Report');
+
+    // Sheet 2: Buyer-wise Summary
+    const buyerHeaders = ['Buyer Name', 'Total Due Items', 'Pending Styles Count', 'Total Booking Qty', 'Total Received Qty', 'Remaining Due Qty'];
+    const buyerRows = dsBuyerWiseSummary.map(b => [
+      b.buyer,
+      b.totalItems,
+      b.uniqueStyles,
+      b.totalBookingQty,
+      b.totalRecvQty,
+      b.totalDueQty
+    ]);
+
+    const wsBuyer = XLSX.utils.aoa_to_sheet([
+      ['BUYER-WISE DRAWSTRING DUE SUMMARY'],
+      [],
+      buyerHeaders,
+      ...buyerRows
+    ]);
+
+    XLSX.utils.book_append_sheet(wb, wsBuyer, 'Buyer Summary');
+
+    XLSX.writeFile(wb, `Daily_Drawstring_Due_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  // Export Daily Drawstring Due Report to PDF using jsPDF
+  const handleExportDsDuePdf = () => {
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+
+    // Title
+    doc.setFontSize(16);
+    doc.setTextColor(13, 148, 136); // Teal
+    doc.text('MCD STORE - DAILY DRAWSTRING DUE / PENDING REPORT', 14, 15);
+
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Generated On: ${new Date().toLocaleString()} | Filter Buyer: ${selectedBuyer} | Style: ${selectedStyle}`, 14, 21);
+
+    // Summary Box
+    doc.setFillColor(240, 253, 250);
+    doc.setDrawColor(153, 246, 228);
+    doc.roundedRect(14, 25, 269, 14, 2, 2, 'FD');
+
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Pending Jobs: ${dsDueMetrics.totalPendingJobs}   |   Pending Styles: ${dsDueMetrics.totalPendingStyles}   |   Booking Qty: ${dsDueMetrics.totalBooking.toLocaleString()}   |   Received Qty: ${dsDueMetrics.totalRecv.toLocaleString()}   |   TOTAL REMAINING DUE QTY: ${dsDueMetrics.totalDue.toLocaleString()}`, 18, 33);
+
+    // Table Data
+    const tableHeaders = [
+      ['Buyer Name', 'Date', 'Job / Ref No', 'Style', 'SR/GT No', 'Store Ref', 'PO No', 'Item & Color', 'Size', 'Unit', 'Booking', 'Received', 'Due Qty', 'Supplier']
+    ];
+
+    const tableRows = filteredDrawstringDueItems.map(i => {
+      const bQty = Number(i.booking_qty) || 0;
+      const rQty = Number(i.receive_qty ?? i.rcv_qty) || 0;
+      const dueQty = Math.max(0, bQty - rQty);
+
+      return [
+        i.buyer_name || i.buyer || '-',
+        i.booking_date || i.date || '-',
+        i.ref_no_job_no || i.job_no || '-',
+        i.style || '-',
+        i.sr_gt_no || i.sr_gt || '-',
+        i.store_ref || i.s_thread_ref || '-',
+        i.po_no || i.order_no || '-',
+        `${i.drawstring_type || i.item_name || '-'} / ${i.colour || i.color || '-'}`,
+        i.size_mm || i.size || '-',
+        i.unit || 'PCS',
+        bQty.toLocaleString(),
+        rQty.toLocaleString(),
+        dueQty.toLocaleString(),
+        i.supplier || '-'
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 43,
+      head: tableHeaders,
+      body: tableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [15, 118, 110],
+        textColor: [255, 255, 255],
+        fontSize: 8,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+        textColor: [30, 41, 59]
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', textColor: [13, 148, 136] },
+        10: { halign: 'right' },
+        11: { halign: 'right' },
+        12: { halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      }
+    });
+
+    doc.save(`Daily_Drawstring_Due_Report_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   // Export Sewing Thread Due Report to Excel
@@ -589,7 +873,25 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
         {/* PRIMARY NAVIGATION TAB SWITCHER */}
         <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700">
           
-          {/* TAB 1: SEWING THREAD DUE / PENDING REPORT */}
+          {/* TAB 1: DAILY DRAWSTRING DUE REPORT */}
+          <button
+            onClick={() => setActiveTab('drawstring_due')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'drawstring_due'
+                ? 'bg-teal-600 text-white shadow-md shadow-teal-600/30'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <Clock className="w-4 h-4 text-teal-200" />
+            <span>Daily Drawstring Due Report</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+              activeTab === 'drawstring_due' ? 'bg-white/20 text-white' : 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300'
+            }`}>
+              {drawstringDueItems.length}
+            </span>
+          </button>
+
+          {/* TAB 2: SEWING THREAD DUE / PENDING REPORT */}
           <button
             onClick={() => setActiveTab('sewing_due')}
             className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
@@ -607,7 +909,7 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
             </span>
           </button>
 
-          {/* TAB 2: QC NOT OK REPORT */}
+          {/* TAB 3: QC NOT OK REPORT */}
           <button
             onClick={() => setActiveTab('qc_not_ok')}
             className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
@@ -627,7 +929,7 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
             )}
           </button>
 
-          {/* TAB 3: SEWING THREAD MAIN */}
+          {/* TAB 4: SEWING THREAD MAIN */}
           <button
             onClick={() => setActiveTab('sewing')}
             className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer ${
@@ -641,12 +943,12 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
             <span className="text-[10px] opacity-75">({sewingItems.length})</span>
           </button>
 
-          {/* TAB 4: DRAWSTRING MAIN */}
+          {/* TAB 5: DRAWSTRING MAIN */}
           <button
             onClick={() => setActiveTab('drawstring')}
             className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'drawstring'
-                ? 'bg-teal-600 text-white shadow-md shadow-teal-600/30'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
                 : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
@@ -674,8 +976,8 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
               onChange={(e) => setSearchTerm(e.target.value)}
               className={`w-full pl-9 pr-8 py-2 text-xs rounded-xl border outline-none transition-all ${
                 isLight 
-                  ? 'bg-slate-50 border-slate-200 focus:border-rose-500 focus:bg-white text-slate-800' 
-                  : 'bg-slate-950 border-slate-800 focus:border-rose-500 focus:bg-slate-900 text-white'
+                  ? 'bg-slate-50 border-slate-200 focus:border-teal-500 focus:bg-white text-slate-800' 
+                  : 'bg-slate-950 border-slate-800 focus:border-teal-500 focus:bg-slate-900 text-white'
               }`}
             />
             {searchTerm && (
@@ -700,14 +1002,35 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
                   : 'bg-slate-950 border-slate-800 text-slate-200'
               }`}
             >
-              <option value="ALL">All Buyers ({activeTab === 'sewing_due' ? dueBuyersList.length : allBuyers.length})</option>
-              {(activeTab === 'sewing_due' ? dueBuyersList : allBuyers).map(b => (
+              <option value="ALL">
+                All Buyers ({activeTab === 'drawstring_due' ? dsDueBuyersList.length : activeTab === 'sewing_due' ? dueBuyersList.length : allBuyers.length})
+              </option>
+              {(activeTab === 'drawstring_due' ? dsDueBuyersList : activeTab === 'sewing_due' ? dueBuyersList : allBuyers).map(b => (
                 <option key={b} value={b}>{b}</option>
               ))}
             </select>
           </div>
 
-          {/* Style Filter (Only for Sewing Due tab) */}
+          {/* Style Filter (For Drawstring Due or Sewing Due) */}
+          {activeTab === 'drawstring_due' && dsDueStylesList.length > 0 && (
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedStyle}
+                onChange={(e) => setSelectedStyle(e.target.value)}
+                className={`py-2 px-3 text-xs rounded-xl border outline-none font-medium cursor-pointer ${
+                  isLight 
+                    ? 'bg-slate-50 border-slate-200 text-slate-700' 
+                    : 'bg-slate-950 border-slate-800 text-slate-200'
+                }`}
+              >
+                <option value="ALL">All Styles ({dsDueStylesList.length})</option>
+                {dsDueStylesList.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {activeTab === 'sewing_due' && dueStylesList.length > 0 && (
             <div className="flex items-center gap-2">
               <select
@@ -768,6 +1091,42 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
 
         {/* Right Side: Refresh & Export Actions */}
         <div className="flex items-center gap-2">
+          {activeTab === 'drawstring_due' && (
+            <>
+              <button
+                onClick={fetchSupabaseDueData}
+                disabled={isFetchingSupabase}
+                className={`px-3 py-2 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isLight 
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300' 
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                }`}
+                title="Refresh Due Data from Supabase"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSupabase ? 'animate-spin' : ''}`} />
+                <span>Sync Supabase</span>
+              </button>
+
+              <button
+                onClick={handleExportDsDueExcel}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Download Excel Spreadsheet (.xlsx)"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Excel</span>
+              </button>
+
+              <button
+                onClick={handleExportDsDuePdf}
+                className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl shadow-md shadow-teal-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Export PDF Report"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export PDF</span>
+              </button>
+            </>
+          )}
+
           {activeTab === 'sewing_due' && (
             <>
               <button
@@ -824,6 +1183,303 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
           </button>
         </div>
       </div>
+
+      {/* VIEW SECTION 0: DAILY DRAWSTRING DUE / PENDING REPORT TAB */}
+      {activeTab === 'drawstring_due' && (
+        <div className="space-y-6">
+
+          {/* KEY SUMMARY STAT CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* CARD 1: Total Pending Drawstring Items */}
+            <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between relative overflow-hidden ${
+              isLight ? 'bg-gradient-to-br from-teal-50 to-white border-teal-200 text-teal-950' : 'bg-slate-900 border-teal-900/50 text-teal-100'
+            }`}>
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-teal-600 dark:text-teal-400">Total Pending Drawstring Items</p>
+                <h3 className="text-3xl font-black mt-1 font-mono">{dsDueMetrics.totalDueItems}</h3>
+                <p className="text-[11px] text-slate-500 mt-1">Booking Qty {'>'} Received Qty</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400 border border-teal-500/20">
+                <Clock className="w-7 h-7" />
+              </div>
+            </div>
+
+            {/* CARD 2: Total Pending Jobs & Styles */}
+            <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between relative overflow-hidden ${
+              isLight ? 'bg-gradient-to-br from-amber-50 to-white border-amber-200 text-amber-950' : 'bg-slate-900 border-amber-900/50 text-amber-100'
+            }`}>
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Pending Jobs & Styles</p>
+                <h3 className="text-3xl font-black mt-1 font-mono">
+                  {dsDueMetrics.totalPendingJobs} <span className="text-sm font-bold text-slate-500">Jobs</span> / {dsDueMetrics.totalPendingStyles} <span className="text-sm font-bold text-slate-500">Styles</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-1">Unique active pending orders</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-500/20">
+                <Layers className="w-7 h-7" />
+              </div>
+            </div>
+
+            {/* CARD 3: Total Booking Qty */}
+            <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between relative overflow-hidden ${
+              isLight ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 text-blue-950' : 'bg-slate-900 border-blue-900/50 text-blue-100'
+            }`}>
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">Total Booking Qty</p>
+                <h3 className="text-3xl font-black mt-1 font-mono">{dsDueMetrics.totalBooking.toLocaleString()}</h3>
+                <p className="text-[11px] text-slate-500 mt-1">Total Ordered Drawstring</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border border-blue-500/20">
+                <Package className="w-7 h-7" />
+              </div>
+            </div>
+
+            {/* CARD 4: Remaining Due Quantity (Highlighted) */}
+            <div className="p-5 rounded-3xl border shadow-md flex items-center justify-between relative overflow-hidden bg-gradient-to-br from-teal-600 to-teal-700 text-white">
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-teal-100">TOTAL REMAINING DUE QTY</p>
+                <h3 className="text-3xl font-black mt-1 font-mono">{dsDueMetrics.totalDue.toLocaleString()}</h3>
+                <p className="text-[11px] text-teal-100 mt-1">Received: {dsDueMetrics.totalRecv.toLocaleString()}</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-white/20 text-white border border-white/30 animate-pulse">
+                <AlertTriangle className="w-7 h-7" />
+              </div>
+            </div>
+
+          </div>
+
+          {/* BUYER-WISE SUMMARY BREAKDOWN GRID */}
+          <div className={`p-6 rounded-3xl border shadow-sm ${
+            isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-teal-500" />
+                <h3 className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                  Buyer-Wise Drawstring Due Summary
+                </h3>
+              </div>
+              <span className="text-xs font-bold text-slate-400 font-mono">
+                {dsBuyerWiseSummary.length} Active Buyers
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {dsBuyerWiseSummary.map((b) => (
+                <div 
+                  key={b.buyer} 
+                  onClick={() => setSelectedBuyer(b.buyer)}
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                    selectedBuyer.toUpperCase() === b.buyer.toUpperCase()
+                      ? 'bg-teal-500/10 border-teal-500 shadow-sm ring-2 ring-teal-500/20'
+                      : isLight 
+                        ? 'bg-slate-50 hover:bg-teal-50/50 border-slate-200 text-slate-800' 
+                        : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold text-xs text-teal-600 dark:text-teal-400 truncate max-w-[150px]" title={b.buyer}>
+                      {b.buyer}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+                      {b.uniqueStyles} Styles
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5 flex items-baseline justify-between border-t border-slate-200 dark:border-slate-800 pt-2">
+                    <span className="text-[11px] text-slate-500 font-medium">Pending Due:</span>
+                    <span className="text-base font-black font-mono text-teal-600 dark:text-teal-400">
+                      {b.totalDueQty.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span>Booking: {b.totalBookingQty.toLocaleString()}</span>
+                    <span>Received: {b.totalRecvQty.toLocaleString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* MAIN DRAWSTRING DUE DATA TABLE */}
+          <div className={`rounded-3xl border overflow-hidden shadow-sm ${
+            isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+          }`}>
+            <div className="p-4 bg-slate-900 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-teal-500 animate-ping" />
+                <h3 className="text-sm font-black tracking-wide text-teal-300 flex items-center gap-2">
+                  <span>🧶 Daily Pending Drawstring Due Items List</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-teal-600 text-white text-[10px] font-mono">
+                    {filteredDrawstringDueItems.length} Records
+                  </span>
+                </h3>
+              </div>
+              <span className="text-xs text-slate-400">
+                Filtered Buyer: <strong className="text-white">{selectedBuyer}</strong> | Style: <strong className="text-white">{selectedStyle}</strong>
+              </span>
+            </div>
+
+            {filteredDrawstringDueItems.length === 0 ? (
+              <div className="p-12 text-center space-y-3">
+                <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
+                <h4 className="text-base font-black text-slate-700 dark:text-slate-200">No Pending Drawstring Due Items Found!</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  All drawstring bookings under these filter options are fully received or no pending items match your search.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className={`text-[11px] uppercase tracking-wider font-extrabold border-b ${
+                    isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-950 text-slate-300 border-slate-800'
+                  }`}>
+                    <tr>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">SL</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Buyer Name</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Booking Date</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Job / Ref No</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Style</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">SR / GT No</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Store Ref</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">PO / Order No</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Item Name / Type & Color</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Size (mm)</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-center">Unit</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Booking Qty</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right">Received Qty</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800 text-right bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300">Remaining Due Qty</th>
+                      <th className="py-3 px-2 border-r border-slate-300 dark:border-slate-800">Supplier</th>
+                      <th className="py-3 px-2 text-center">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
+                    {filteredDrawstringDueItems.map((item, idx) => {
+                      const bQty = Number(item.booking_qty) || 0;
+                      const rQty = Number(item.receive_qty ?? item.rcv_qty) || 0;
+                      const dueQty = Math.max(0, bQty - rQty);
+
+                      return (
+                        <tr 
+                          key={item.id || idx}
+                          className={`transition-colors hover:bg-teal-50/40 dark:hover:bg-teal-950/20 ${
+                            isLight ? 'text-slate-800' : 'text-slate-200'
+                          }`}
+                        >
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 border-r border-slate-300 dark:border-slate-800">{idx + 1}</td>
+                          
+                          {/* 1. Buyer Name */}
+                          <td className="py-2.5 px-2 font-black text-teal-600 dark:text-teal-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.buyer_name || item.buyer || 'GMS Buyer'}
+                          </td>
+
+                          {/* 2. Booking Date */}
+                          <td className="py-2.5 px-2 font-mono text-slate-500 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.booking_date || item.date || '-'}
+                          </td>
+
+                          {/* 3. Job / Ref No */}
+                          <td className="py-2.5 px-2 font-black font-mono text-slate-900 dark:text-white whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.ref_no_job_no || item.job_no || '-'}
+                          </td>
+
+                          {/* 4. Style */}
+                          <td className="py-2.5 px-2 border-r border-slate-300 dark:border-slate-800 whitespace-nowrap font-bold text-slate-700 dark:text-slate-300">
+                            {item.style || '-'}
+                          </td>
+
+                          {/* 5. SR / GT No */}
+                          <td className="py-2.5 px-2 font-mono font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.sr_gt_no || item.sr_gt || '-'}
+                          </td>
+
+                          {/* 6. Store Ref */}
+                          <td className="py-2.5 px-2 font-mono font-bold text-blue-700 dark:text-blue-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.store_ref || item.s_thread_ref || '-'}
+                          </td>
+
+                          {/* 7. PO / Order No */}
+                          <td className="py-2.5 px-2 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.po_no || item.order_no || '-'}
+                          </td>
+
+                          {/* 8. Item Name / Type & Color */}
+                          <td className="py-2.5 px-2 border-r border-slate-300 dark:border-slate-800 whitespace-nowrap">
+                            <div className="font-bold text-slate-800 dark:text-slate-200">{item.drawstring_type || item.item_name || 'Drawstring'}</div>
+                            <div className="text-[11px] text-teal-600 dark:text-teal-400 font-medium">{item.colour || item.color || '-'}</div>
+                          </td>
+
+                          {/* 9. Size (mm) */}
+                          <td className="py-2.5 px-2 font-mono text-center whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.size_mm || item.size || '-'}
+                          </td>
+
+                          {/* 10. Unit */}
+                          <td className="py-2.5 px-2 text-center font-bold font-mono text-slate-500 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.unit || 'PCS'}
+                          </td>
+
+                          {/* 11. Total Booking Qty */}
+                          <td className="py-2.5 px-2 text-right font-black font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {bQty.toLocaleString()}
+                          </td>
+
+                          {/* 12. Total Received Qty */}
+                          <td className="py-2.5 px-2 text-right font-bold font-mono text-emerald-600 dark:text-emerald-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {rQty.toLocaleString()}
+                          </td>
+
+                          {/* 13. Remaining Due Qty */}
+                          <td className="py-2.5 px-2 text-right whitespace-nowrap border-r border-slate-300 dark:border-slate-800 bg-teal-50/60 dark:bg-teal-950/30">
+                            <span className="px-2.5 py-1 rounded-lg font-black font-mono text-xs bg-teal-600 text-white shadow-sm border border-teal-700 inline-flex items-center gap-1 animate-pulse">
+                              <Clock className="w-3 h-3" />
+                              <span>{dueQty.toLocaleString()} {item.unit || 'PCS'}</span>
+                            </span>
+                          </td>
+
+                          {/* 14. Supplier */}
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-300">
+                            {item.supplier || '-'}
+                          </td>
+
+                          {/* 15. Remarks */}
+                          <td className="py-2.5 px-2 text-slate-500 max-w-[130px] truncate text-center" title={item.remarks}>
+                            {item.remarks || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+
+                  {/* TABLE FOOTER SUMMARY ROW */}
+                  <tfoot className={`font-black text-xs uppercase border-t-2 ${
+                    isLight ? 'bg-slate-100 text-slate-900 border-slate-300' : 'bg-slate-950 text-slate-100 border-slate-700'
+                  }`}>
+                    <tr>
+                      <td colSpan={11} className="py-3 px-3 text-right font-black border-r border-slate-300 dark:border-slate-800">
+                        TOTAL PENDING SUMMARY:
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800">
+                        {dsDueMetrics.totalBooking.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 border-r border-slate-300 dark:border-slate-800">
+                        {dsDueMetrics.totalRecv.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono font-black text-teal-600 dark:text-teal-400 bg-teal-100/80 dark:bg-teal-950/80 border-r border-slate-300 dark:border-slate-800">
+                        {dsDueMetrics.totalDue.toLocaleString()}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
 
       {/* VIEW SECTION 1: SEWING THREAD DUE / PENDING REPORT TAB */}
       {activeTab === 'sewing_due' && (

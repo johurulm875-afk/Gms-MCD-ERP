@@ -326,7 +326,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   required
                   value={loginUsername}
                   onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder="admin@gms.com"
+                  placeholder="Enter username or email"
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 focus:border-indigo-600 rounded-xl text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
                 />
               </div>
@@ -358,56 +358,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               <ArrowRight className="w-4 h-4 text-indigo-200" />
             </button>
 
-            {/* Quick Role Fill Preset Buttons */}
-            <div className="mt-5 pt-4 border-t border-slate-200 space-y-2">
-              <p className="text-[11px] font-extrabold text-slate-500 text-center">Quick Role Login Fill (Quick Demo):</p>
-              <div className="grid grid-cols-1 gap-1.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginUsername('admin@gms.com');
-                    setLoginPassword('ruma7862');
-                  }}
-                  className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl font-bold text-indigo-900 flex items-center justify-between px-3 transition-colors shadow-2xs"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Admin</span>
-                  </div>
-                  <span className="text-[10px] text-indigo-700 font-mono">admin@gms.com</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginUsername('subadmin@gms.com');
-                    setLoginPassword('subadmin123');
-                  }}
-                  className="w-full py-2 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-xl font-bold text-violet-900 flex items-center justify-between px-3 transition-colors shadow-2xs"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-violet-600" />
-                    <span>Sub Admin (Entry, Edit & Delete)</span>
-                  </div>
-                  <span className="text-[10px] text-violet-700 font-mono">subadmin@gms.com</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginUsername('user@gms.com');
-                    setLoginPassword('user123');
-                  }}
-                  className="w-full py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl font-bold text-amber-900 flex items-center justify-between px-3 transition-colors shadow-2xs"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Standard User (View & Download Only)</span>
-                  </div>
-                  <span className="text-[10px] text-amber-700 font-mono">user@gms.com</span>
-                </button>
-              </div>
-            </div>
+            {/* Clean empty space under login button */}
           </form>
         )}
 
