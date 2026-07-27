@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { TwillTapeItem, SewingThreadItem, DrawstringItem, UserProfile, ActiveTab } from '../types';
+import { AllahNamesWidget } from './AllahNamesWidget';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell,
   CartesianGrid
@@ -228,6 +229,11 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
                 </span>
               </p>
             </div>
+          </div>
+
+          {/* ALLAH'S 99 NAMES ANIMATED SLIDING WIDGET */}
+          <div className="flex-1 flex justify-center min-w-[280px]">
+            <AllahNamesWidget />
           </div>
 
           {/* Quick Navigation Fast Buttons */}

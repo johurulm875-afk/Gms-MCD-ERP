@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { supabase } from '../supabaseClient';
 import { GmsLogo } from './GmsLogo';
+import { PrayerTimeWidget } from './PrayerTimeWidget';
 import { Lock, User, ShieldCheck, ArrowRight, Sparkles, BadgeCheck, AlertCircle, ShieldAlert, Layers } from 'lucide-react';
 
 interface AuthScreenProps {
@@ -257,6 +258,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           Multi-Module Textile & Garments Accessories Portal
         </p>
       </div>
+
+      {/* 5 Waqt Prayer Time & Live Clock Widget */}
+      <PrayerTimeWidget />
 
       {/* Main Auth Card */}
       <div className="w-full max-w-md bg-white/90 border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl z-10 my-6 animate-in zoom-in-95 duration-500">
