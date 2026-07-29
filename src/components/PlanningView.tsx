@@ -1,16 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { PlanningItem, AppTheme } from '../types';
+import { PlanningItem, SewingThreadItem, AppTheme } from '../types';
 import { 
   CalendarDays, Plus, Search, Filter, Printer, FileSpreadsheet,
   AlertTriangle, Clock, CheckCircle, Package, ArrowUpRight, ChevronRight,
-  TrendingUp, Edit, Trash2, X
+  TrendingUp, Edit, Trash2, X, FileCheck, CheckCircle2
 } from 'lucide-react';
+import { PlanningAuditReport } from './PlanningAuditReport';
 
 interface PlanningViewProps {
   planningItems: PlanningItem[];
   onAddPlanningItem: (item: Omit<PlanningItem, 'id'>) => void;
   onUpdatePlanningItem: (item: PlanningItem) => void;
   onDeletePlanningItem?: (id: number) => void;
+  sewingThreadItems?: SewingThreadItem[];
   theme?: AppTheme;
 }
 
@@ -19,12 +21,14 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
   onAddPlanningItem,
   onUpdatePlanningItem,
   onDeletePlanningItem,
+  sewingThreadItems = [],
   theme = 'light'
 }) => {
   const isLight = theme === 'light';
 
   // State
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAuditReport, setShowAuditReport] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBuyer, setSelectedBuyer] = useState('ALL');
   const [selectedPriority, setSelectedPriority] = useState('ALL');
@@ -163,11 +167,24 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowAuditReport(!showAuditReport)}
+              className={`px-4 py-2.5 font-black text-xs rounded-xl shadow-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                showAuditReport 
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30 ring-2 ring-emerald-300' 
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 border border-emerald-400/40'
+              }`}
+            >
+              <FileCheck className="w-4 h-4 text-emerald-200" />
+              <span>Planning Order vs Sewing Thread Audit Report</span>
+            </button>
+
             <button
               type="button"
               onClick={handleExportCSV}
-              className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20 backdrop-blur-md flex items-center gap-1.5 transition-all"
+              className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20 backdrop-blur-md flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <FileSpreadsheet className="w-4 h-4 text-violet-300" />
               <span>Export CSV</span>
@@ -176,7 +193,7 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
             <button
               type="button"
               onClick={() => setShowAddModal(true)}
-              className="px-4 py-2.5 bg-violet-500 hover:bg-violet-400 text-white font-black text-xs rounded-xl shadow-lg shadow-violet-500/30 flex items-center gap-1.5 transition-all"
+              className="px-4 py-2.5 bg-violet-500 hover:bg-violet-400 text-white font-black text-xs rounded-xl shadow-lg shadow-violet-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>New Planning Entry</span>
@@ -184,6 +201,17 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* PLANNING ORDER VS SEWING THREAD AUDIT REPORT COMPONENT */}
+      {showAuditReport && (
+        <div className="pt-2">
+          <PlanningAuditReport
+            sewingThreadItems={sewingThreadItems}
+            theme={theme}
+            onClose={() => setShowAuditReport(false)}
+          />
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

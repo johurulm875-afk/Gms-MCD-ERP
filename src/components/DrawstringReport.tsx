@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { DrawstringItem, SewingThreadItem, AppTheme, UserProfile } from '../types';
+import { DrawstringItem, SewingThreadItem, TwillTapeItem, AppTheme, UserProfile } from '../types';
 import XLSX from 'xlsx-js-style';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -14,25 +14,29 @@ import {
 interface DrawstringReportProps {
   items?: DrawstringItem[];
   sewingItems?: SewingThreadItem[];
+  twillItems?: TwillTapeItem[];
   theme?: AppTheme;
   currentUser?: UserProfile | null;
   canEdit?: boolean;
   onUpdateItem?: (updatedItem: DrawstringItem) => void;
   onUpdateSewingItem?: (updatedItem: SewingThreadItem) => void;
+  onUpdateTwillItem?: (updatedItem: TwillTapeItem) => void;
   onDeleteItem?: (id: number) => void;
 }
 
 export const DrawstringReport: React.FC<DrawstringReportProps> = ({
   items = [],
   sewingItems = [],
+  twillItems = [],
   theme = 'light',
   onUpdateItem,
-  onUpdateSewingItem
+  onUpdateSewingItem,
+  onUpdateTwillItem
 }) => {
   const isLight = theme === 'light';
 
-  // Active Report Tab: 'drawstring_due' | 'sewing_due' | 'qc_not_ok' | 'sewing' | 'drawstring'
-  const [activeTab, setActiveTab] = useState<'drawstring_due' | 'sewing_due' | 'qc_not_ok' | 'sewing' | 'drawstring'>('drawstring_due');
+  // Active Report Tab: 'drawstring_due' | 'sewing_due' | 'twill_due' | 'qc_not_ok' | 'sewing' | 'drawstring'
+  const [activeTab, setActiveTab] = useState<'drawstring_due' | 'sewing_due' | 'twill_due' | 'qc_not_ok' | 'sewing' | 'drawstring'>('drawstring_due');
   
   // Filter within QC Not OK: 'ALL' | 'SEWING' | 'DRAWSTRING'
   const [qcCategory, setQcCategory] = useState<'ALL' | 'SEWING' | 'DRAWSTRING'>('ALL');
@@ -45,6 +49,7 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
   // Supabase direct fetched due items state for real-time backup
   const [supabaseDueItems, setSupabaseDueItems] = useState<SewingThreadItem[]>([]);
   const [supabaseDsDueItems, setSupabaseDsDueItems] = useState<DrawstringItem[]>([]);
+  const [supabaseTwillDueItems, setSupabaseTwillDueItems] = useState<TwillTapeItem[]>([]);
   const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
 
   // Function to fetch directly from Supabase table / view
@@ -77,6 +82,20 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
           return b > rec;
         });
         setSupabaseDsDueItems(dueDs);
+      }
+
+      // 3. Query twill_tape for due items
+      const { data: twillData, error: twillErr } = await supabase
+        .from('twill_tape')
+        .select('*');
+
+      if (!twillErr && twillData && twillData.length > 0) {
+        const dueTwill = twillData.filter((r: any) => {
+          const b = Number(r.booking_qty || r.booking_quantity) || 0;
+          const rec = Number(r.receive_qty || r.rcvd_qty) || 0;
+          return b > rec;
+        });
+        setSupabaseTwillDueItems(dueTwill);
       }
     } catch (e) {
       console.warn("Notice: Could not fetch due items directly from Supabase, using live state:", e);
@@ -325,6 +344,127 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
       totalDue
     };
   }, [filteredSewingDueItems]);
+
+  // 1.5 TWILL TAPE DUE / PENDING ITEMS
+  const twillDueItems = useMemo(() => {
+    const sourceList = twillItems.length > 0 ? twillItems : supabaseTwillDueItems;
+    return sourceList.filter(item => {
+      const bQty = Number(item.booking_qty || item.booking_quantity) || 0;
+      const rQty = Number(item.receive_qty || item.rcvd_qty) || 0;
+      return bQty > rQty;
+    });
+  }, [twillItems, supabaseTwillDueItems]);
+
+  const twillDueBuyersList = useMemo(() => {
+    const set = new Set<string>();
+    twillDueItems.forEach(i => {
+      const b = i.buyer_name || i.buyer || '';
+      if (b) set.add(b.trim());
+    });
+    return Array.from(set).sort();
+  }, [twillDueItems]);
+
+  const twillDueStylesList = useMemo(() => {
+    const set = new Set<string>();
+    twillDueItems.forEach(i => {
+      if (i.style) set.add(i.style.trim());
+    });
+    return Array.from(set).sort();
+  }, [twillDueItems]);
+
+  const filteredTwillDueItems = useMemo(() => {
+    return twillDueItems.filter(i => {
+      const buyer = (i.buyer_name || i.buyer || '').toUpperCase();
+      if (selectedBuyer !== 'ALL' && buyer !== selectedBuyer.toUpperCase()) return false;
+
+      const style = (i.style || '').toUpperCase();
+      if (selectedStyle !== 'ALL' && style !== selectedStyle.toUpperCase()) return false;
+
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        buyer.toLowerCase().includes(term) ||
+        (i.job_no || '').toLowerCase().includes(term) ||
+        (i.style || '').toLowerCase().includes(term) ||
+        (i.order_no || '').toLowerCase().includes(term) ||
+        (i.store_ref || i.twill_ref || i.s_tape_ref || '').toLowerCase().includes(term) ||
+        (i.colour || i.color || '').toLowerCase().includes(term) ||
+        (i.item_name || '').toLowerCase().includes(term) ||
+        (i.cm || i.size || '').toLowerCase().includes(term) ||
+        (i.supplier || '').toLowerCase().includes(term)
+      );
+    });
+  }, [twillDueItems, selectedBuyer, selectedStyle, searchTerm]);
+
+  const twillDueMetrics = useMemo(() => {
+    const totalDueItems = filteredTwillDueItems.length;
+    const uniqueJobsSet = new Set<string>();
+    const uniqueStylesSet = new Set<string>();
+    let totalBooking = 0;
+    let totalRecv = 0;
+    let totalDue = 0;
+
+    filteredTwillDueItems.forEach(i => {
+      if (i.job_no) uniqueJobsSet.add(i.job_no.trim());
+      if (i.style) uniqueStylesSet.add(i.style.trim());
+      const b = Number(i.booking_qty || i.booking_quantity) || 0;
+      const r = Number(i.receive_qty || i.rcvd_qty) || 0;
+      totalBooking += b;
+      totalRecv += r;
+      totalDue += Math.max(0, b - r);
+    });
+
+    return {
+      totalDueItems,
+      totalPendingJobs: uniqueJobsSet.size,
+      totalPendingStyles: uniqueStylesSet.size,
+      totalBooking,
+      totalRecv,
+      totalDue
+    };
+  }, [filteredTwillDueItems]);
+
+  const twillBuyerWiseSummary = useMemo(() => {
+    const summaryMap: {
+      [key: string]: {
+        buyer: string;
+        totalItems: number;
+        stylesCount: Set<string>;
+        totalBookingQty: number;
+        totalRecvQty: number;
+        totalDueQty: number;
+      };
+    } = {};
+
+    twillDueItems.forEach(item => {
+      const buyerName = item.buyer_name || item.buyer || 'General Buyer';
+      const bQty = Number(item.booking_qty || item.booking_quantity) || 0;
+      const rQty = Number(item.receive_qty || item.rcvd_qty) || 0;
+      const dueQty = Math.max(0, bQty - rQty);
+
+      if (!summaryMap[buyerName]) {
+        summaryMap[buyerName] = {
+          buyer: buyerName,
+          totalItems: 0,
+          stylesCount: new Set<string>(),
+          totalBookingQty: 0,
+          totalRecvQty: 0,
+          totalDueQty: 0
+        };
+      }
+
+      summaryMap[buyerName].totalItems += 1;
+      if (item.style) summaryMap[buyerName].stylesCount.add(item.style.trim());
+      summaryMap[buyerName].totalBookingQty += bQty;
+      summaryMap[buyerName].totalRecvQty += rQty;
+      summaryMap[buyerName].totalDueQty += dueQty;
+    });
+
+    return Object.values(summaryMap).map(s => ({
+      ...s,
+      uniqueStyles: s.stylesCount.size
+    })).sort((a, b) => b.totalDueQty - a.totalDueQty);
+  }, [twillDueItems]);
 
 
   // 2. QC NOT OK ITEMS
@@ -728,6 +868,146 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
     doc.save(`Sewing_Thread_Due_Report_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
+  // Export Twill Tape Due Report to Excel
+  const handleExportTwillDueExcel = () => {
+    if (!filteredTwillDueItems || filteredTwillDueItems.length === 0) {
+      alert('No twill tape due records available to export.');
+      return;
+    }
+
+    const columns: ExcelColumnDef[] = [
+      { header: 'SL', key: 'sl', width: 6, align: 'center' },
+      { header: 'Buyer Name', key: 'buyer_display', width: 18, align: 'left' },
+      { header: 'Booking Date', key: 'date_display', width: 13, align: 'center' },
+      { header: 'Job No', key: 'job_display', width: 14, align: 'left' },
+      { header: 'Style', key: 'style', width: 18, align: 'left' },
+      { header: 'SR/GT No', key: 'sr_display', width: 14, align: 'left' },
+      { header: 'Store Ref / Booking Ref', key: 'store_ref_display', width: 18, align: 'left' },
+      { header: 'PO No / Order No', key: 'po_display', width: 14, align: 'left' },
+      { header: 'Item Name / Type', key: 'item_display', width: 18, align: 'left' },
+      { header: 'Color Name', key: 'color_display', width: 14, align: 'left' },
+      { header: 'Size (mm / cm)', key: 'size_display', width: 10, align: 'center' },
+      { header: 'Unit', key: 'unit_display', width: 8, align: 'center' },
+      { header: 'Total Booking Qty (YDS)', key: 'booking_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Total Received Qty (YDS)', key: 'rcv_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Remaining Due Qty (YDS)', key: 'due_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Supplier', key: 'supplier', width: 16, align: 'left' },
+      { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
+    ];
+
+    const formattedData = filteredTwillDueItems.map((i, idx) => {
+      const bQty = Number(i.booking_qty || i.booking_quantity) || 0;
+      const rQty = Number(i.receive_qty || i.rcvd_qty) || 0;
+      const dueQty = Math.max(0, bQty - rQty);
+
+      return {
+        ...i,
+        sl: idx + 1,
+        buyer_display: i.buyer_name || i.buyer || '',
+        date_display: i.booking_date || i.date || '',
+        job_display: i.job_no || '',
+        sr_display: i.sr_gt_no || i.sr_gt || '',
+        store_ref_display: i.store_ref || i.twill_ref || i.s_tape_ref || '',
+        po_display: i.order_no || i.po_no || '',
+        item_display: i.item_name || 'Twill Tape',
+        color_display: i.colour || i.color || '',
+        size_display: i.cm || i.size || '',
+        unit_display: i.unit || 'YDS',
+        booking_qty: bQty,
+        rcv_qty: rQty,
+        due_qty: dueQty
+      };
+    });
+
+    generateCompanyMultiSheetExcel<any>({
+      moduleName: 'Twill Tape',
+      fileNamePrefix: 'Twill_Tape_Due_Report',
+      data: formattedData,
+      columns,
+      getBuyerName: (i: any) => i.buyer_name || i.buyer || 'General Buyer',
+      getBookingQty: (i: any) => Number(i.booking_qty || i.booking_quantity) || 0,
+      getReceiveQty: (i: any) => Number(i.receive_qty || i.rcvd_qty) || 0,
+      isUnreceived: (i: any) => (Number(i.receive_qty || i.rcvd_qty) || 0) < (Number(i.booking_qty || i.booking_quantity) || 0) || (Number(i.receive_qty || i.rcvd_qty) || 0) === 0
+    });
+  };
+
+  // Export Twill Tape Due Report to PDF using jsPDF
+  const handleExportTwillDuePdf = () => {
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+
+    doc.setFontSize(16);
+    doc.setTextColor(79, 70, 229); // Indigo
+    doc.text('MCD STORE - TWILL TAPE DUE / PENDING REPORT', 14, 15);
+
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Generated On: ${new Date().toLocaleString()} | Filter Buyer: ${selectedBuyer} | Style: ${selectedStyle}`, 14, 21);
+
+    doc.setFillColor(238, 242, 255);
+    doc.setDrawColor(199, 210, 254);
+    doc.roundedRect(14, 25, 269, 14, 2, 2, 'FD');
+
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Pending Jobs: ${twillDueMetrics.totalPendingJobs}   |   Pending Styles: ${twillDueMetrics.totalPendingStyles}   |   Booking Qty: ${twillDueMetrics.totalBooking.toLocaleString()} YDS   |   Received Qty: ${twillDueMetrics.totalRecv.toLocaleString()} YDS   |   TOTAL REMAINING DUE QTY: ${twillDueMetrics.totalDue.toLocaleString()} YDS`, 18, 33);
+
+    const tableHeaders = [
+      ['Buyer Name', 'Date', 'Job No', 'Style', 'SR/GT No', 'Store Ref', 'PO No', 'Item & Color', 'Size', 'Unit', 'Booking', 'Received', 'Due Qty (YDS)', 'Supplier']
+    ];
+
+    const tableRows = filteredTwillDueItems.map(i => {
+      const bQty = Number(i.booking_qty || i.booking_quantity) || 0;
+      const rQty = Number(i.receive_qty || i.rcvd_qty) || 0;
+      const dueQty = Math.max(0, bQty - rQty);
+
+      return [
+        i.buyer_name || i.buyer || '-',
+        i.booking_date || i.date || '-',
+        i.job_no || '-',
+        i.style || '-',
+        i.sr_gt_no || i.sr_gt || '-',
+        i.store_ref || i.twill_ref || i.s_tape_ref || '-',
+        i.order_no || i.po_no || '-',
+        `${i.item_name || 'Twill Tape'} / ${i.colour || i.color || '-'}`,
+        i.cm || i.size || '-',
+        i.unit || 'YDS',
+        bQty.toLocaleString(),
+        rQty.toLocaleString(),
+        dueQty.toLocaleString(),
+        i.supplier || '-'
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 43,
+      head: tableHeaders,
+      body: tableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [67, 56, 202],
+        textColor: [255, 255, 255],
+        fontSize: 8,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+        textColor: [30, 41, 59]
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', textColor: [79, 70, 229] },
+        10: { halign: 'right' },
+        11: { halign: 'right' },
+        12: { halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      }
+    });
+
+    doc.save(`Twill_Tape_Due_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   // Export QC NOT OK to Excel with GMS Banner, Borders & Buyer Tabs
   const handleExportQcExcel = () => {
     if (qcCategory === 'SEWING' || (qcCategory === 'ALL' && filteredSewingQcNotOk.length > 0)) {
@@ -907,6 +1187,24 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
             </span>
           </button>
 
+          {/* TAB 2.5: TWILL TAPE DUE / PENDING REPORT */}
+          <button
+            onClick={() => setActiveTab('twill_due')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'twill_due'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <Clock className="w-4 h-4 text-indigo-200" />
+            <span>Twill Tape Due Report</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+              activeTab === 'twill_due' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+            }`}>
+              {twillDueItems.length}
+            </span>
+          </button>
+
           {/* TAB 3: QC NOT OK REPORT */}
           <button
             onClick={() => setActiveTab('qc_not_ok')}
@@ -1001,15 +1299,15 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
               }`}
             >
               <option value="ALL">
-                All Buyers ({activeTab === 'drawstring_due' ? dsDueBuyersList.length : activeTab === 'sewing_due' ? dueBuyersList.length : allBuyers.length})
+                All Buyers ({activeTab === 'drawstring_due' ? dsDueBuyersList.length : activeTab === 'sewing_due' ? dueBuyersList.length : activeTab === 'twill_due' ? twillDueBuyersList.length : allBuyers.length})
               </option>
-              {(activeTab === 'drawstring_due' ? dsDueBuyersList : activeTab === 'sewing_due' ? dueBuyersList : allBuyers).map(b => (
+              {(activeTab === 'drawstring_due' ? dsDueBuyersList : activeTab === 'sewing_due' ? dueBuyersList : activeTab === 'twill_due' ? twillDueBuyersList : allBuyers).map(b => (
                 <option key={b} value={b}>{b}</option>
               ))}
             </select>
           </div>
 
-          {/* Style Filter (For Drawstring Due or Sewing Due) */}
+          {/* Style Filter (For Drawstring Due, Sewing Due, or Twill Tape Due) */}
           {activeTab === 'drawstring_due' && dsDueStylesList.length > 0 && (
             <div className="flex items-center gap-2">
               <select
@@ -1042,6 +1340,25 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
               >
                 <option value="ALL">All Styles ({dueStylesList.length})</option>
                 {dueStylesList.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {activeTab === 'twill_due' && twillDueStylesList.length > 0 && (
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedStyle}
+                onChange={(e) => setSelectedStyle(e.target.value)}
+                className={`py-2 px-3 text-xs rounded-xl border outline-none font-medium cursor-pointer ${
+                  isLight 
+                    ? 'bg-slate-50 border-slate-200 text-slate-700' 
+                    : 'bg-slate-950 border-slate-800 text-slate-200'
+                }`}
+              >
+                <option value="ALL">All Styles ({twillDueStylesList.length})</option>
+                {twillDueStylesList.map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
@@ -1153,6 +1470,42 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
               <button
                 onClick={handleExportDuePdf}
                 className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Export PDF Report"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export PDF</span>
+              </button>
+            </>
+          )}
+
+          {activeTab === 'twill_due' && (
+            <>
+              <button
+                onClick={fetchSupabaseDueData}
+                disabled={isFetchingSupabase}
+                className={`px-3 py-2 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isLight 
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300' 
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                }`}
+                title="Refresh Due Data from Supabase"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSupabase ? 'animate-spin' : ''}`} />
+                <span>Sync Supabase</span>
+              </button>
+
+              <button
+                onClick={handleExportTwillDueExcel}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Download Excel Spreadsheet (.xlsx)"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Excel</span>
+              </button>
+
+              <button
+                onClick={handleExportTwillDuePdf}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
                 title="Export PDF Report"
               >
                 <Download className="w-4 h-4" />
@@ -1741,6 +2094,280 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
                       </td>
                       <td className="py-3 px-2 text-right font-mono font-black text-rose-600 dark:text-rose-400 bg-rose-100/80 dark:bg-rose-950/80 border-r border-slate-300 dark:border-slate-800">
                         {dueMetrics.totalDue.toLocaleString()} Cones
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* VIEW SECTION 1.5: TWILL TAPE DUE / PENDING REPORT TAB */}
+      {activeTab === 'twill_due' && (
+        <div className="space-y-6">
+
+          {/* KEY SUMMARY STAT CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* CARD 1: Total Pending Twill Tape Items */}
+            <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between relative overflow-hidden ${
+              isLight ? 'bg-gradient-to-br from-indigo-50 to-white border-indigo-200 text-indigo-950' : 'bg-slate-900 border-indigo-900/50 text-indigo-100'
+            }`}>
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Total Pending Twill Tape Items</p>
+                <h3 className="text-3xl font-black mt-1 font-mono">{twillDueMetrics.totalDueItems}</h3>
+                <p className="text-[11px] text-slate-500 mt-1">Booking Qty {'>'} Received Qty</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 border border-indigo-500/20">
+                <Clock className="w-7 h-7" />
+              </div>
+            </div>
+
+            {/* CARD 2: Total Pending Jobs & Styles */}
+            <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between relative overflow-hidden ${
+              isLight ? 'bg-gradient-to-br from-amber-50 to-white border-amber-200 text-amber-950' : 'bg-slate-900 border-amber-900/50 text-amber-100'
+            }`}>
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Pending Jobs & Styles</p>
+                <h3 className="text-3xl font-black mt-1 font-mono">
+                  {twillDueMetrics.totalPendingJobs} <span className="text-sm font-bold text-slate-500">Jobs</span> / {twillDueMetrics.totalPendingStyles} <span className="text-sm font-bold text-slate-500">Styles</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-1">Filtered by current selection</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-500/20">
+                <AlertTriangle className="w-7 h-7" />
+              </div>
+            </div>
+
+            {/* CARD 3: Total Booking Qty */}
+            <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between relative overflow-hidden ${
+              isLight ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 text-blue-950' : 'bg-slate-900 border-blue-900/50 text-blue-100'
+            }`}>
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">Total Booking Qty</p>
+                <h3 className="text-3xl font-black mt-1 font-mono">{twillDueMetrics.totalBooking.toLocaleString()} <span className="text-sm">YDS</span></h3>
+                <p className="text-[11px] text-slate-500 mt-1">All Work Orders</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 border border-blue-500/20">
+                <Layers className="w-7 h-7" />
+              </div>
+            </div>
+
+            {/* CARD 4: Total Remaining Due Qty */}
+            <div className={`p-5 rounded-3xl border shadow-sm flex items-center justify-between relative overflow-hidden ${
+              isLight ? 'bg-gradient-to-br from-rose-50 to-white border-rose-300 text-rose-950' : 'bg-slate-900 border-rose-800 text-rose-100'
+            }`}>
+              <div className="z-10">
+                <p className="text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">Total Remaining Due Qty</p>
+                <h3 className="text-3xl font-black mt-1 font-mono text-rose-600 dark:text-rose-400 animate-pulse">
+                  {twillDueMetrics.totalDue.toLocaleString()} <span className="text-sm">YDS</span>
+                </h3>
+                <p className="text-[11px] text-rose-500 mt-1 font-semibold">Shortage / Balance Pending</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-rose-500/20 text-rose-600 dark:bg-rose-500/30 dark:text-rose-300 border border-rose-500/30">
+                <Clock className="w-7 h-7" />
+              </div>
+            </div>
+
+          </div>
+
+          {/* BUYER-WISE PENDING SUMMARY CARDS */}
+          {twillBuyerWiseSummary.length > 0 && (
+            <div className={`p-6 rounded-3xl border shadow-sm space-y-4 ${
+              isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+            }`}>
+              <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-ping" />
+                  <h3 className="text-base font-black tracking-tight text-slate-900 dark:text-white">
+                    Buyer-Wise Twill Tape Due Summary Breakdown
+                  </h3>
+                </div>
+                <span className="text-xs font-mono font-bold text-slate-500">
+                  {twillBuyerWiseSummary.length} Active Buyers
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {twillBuyerWiseSummary.map(bs => (
+                  <div 
+                    key={bs.buyer}
+                    onClick={() => setSelectedBuyer(bs.buyer)}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer hover:scale-[1.01] ${
+                      selectedBuyer.toUpperCase() === bs.buyer.toUpperCase()
+                        ? 'bg-indigo-50/90 border-indigo-500 dark:bg-indigo-950/60 dark:border-indigo-500 shadow-md ring-2 ring-indigo-500/30'
+                        : isLight ? 'bg-slate-50/80 border-slate-200 hover:border-slate-300' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-extrabold text-sm text-indigo-600 dark:text-indigo-400 truncate">
+                        {bs.buyer}
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                        {bs.totalItems} Items
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 mt-3 text-center pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Booking</p>
+                        <p className="text-xs font-black font-mono text-slate-700 dark:text-slate-300">{bs.totalBookingQty.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Received</p>
+                        <p className="text-xs font-black font-mono text-emerald-600 dark:text-emerald-400">{bs.totalRecvQty.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase">Remaining Due</p>
+                        <p className="text-sm font-black font-mono text-rose-600 dark:text-rose-400">{bs.totalDueQty.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* MAIN TWILL TAPE DUE TABLE CONTAINER */}
+          <div className={`p-6 rounded-3xl border shadow-sm space-y-4 ${
+            isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+          }`}>
+            
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-4 border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-lg font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Pending Twill Tape Item List</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-xs font-mono font-extrabold">
+                    {filteredTwillDueItems.length}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Showing Twill Tape & Herringbone items where received quantity is less than booked quantity
+                </p>
+              </div>
+            </div>
+
+            {filteredTwillDueItems.length === 0 ? (
+              <div className="text-center py-12 border-2 border-dashed rounded-2xl border-slate-200 dark:border-slate-800">
+                <Clock className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                <p className="text-sm font-bold text-slate-500">No pending Twill Tape items match your current filter.</p>
+                <p className="text-xs text-slate-400 mt-1">Try resetting buyer or search keywords.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-300 dark:border-slate-800 shadow-inner">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className={`font-black uppercase text-[11px] tracking-wider border-b ${
+                    isLight 
+                      ? 'bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white border-slate-300' 
+                      : 'bg-slate-950 text-indigo-300 border-slate-800'
+                  }`}>
+                    <tr>
+                      <th className="py-3 px-2 text-center border-r border-slate-700/60 w-10">SL</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">Buyer Name</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">Booking Date</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">Job No</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">Style Ref</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">SR/GT No</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">Store Ref</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">PO / Order No</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">Item & Color</th>
+                      <th className="py-3 px-2 text-center border-r border-slate-700/60">Size</th>
+                      <th className="py-3 px-2 text-center border-r border-slate-700/60">Unit</th>
+                      <th className="py-3 px-2 text-right border-r border-slate-700/60">Booking Qty</th>
+                      <th className="py-3 px-2 text-right border-r border-slate-700/60">Recv Qty</th>
+                      <th className="py-3 px-2 text-right border-r border-slate-700/60 bg-indigo-900/80 text-white">Remaining Due Qty</th>
+                      <th className="py-3 px-2 border-r border-slate-700/60">Supplier</th>
+                      <th className="py-3 px-2 text-center">Remarks</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
+                    {filteredTwillDueItems.map((item, idx) => {
+                      const bQty = Number(item.booking_qty || item.booking_quantity) || 0;
+                      const rQty = Number(item.receive_qty || item.rcvd_qty) || 0;
+                      const dueQty = Math.max(0, bQty - rQty);
+
+                      return (
+                        <tr 
+                          key={item.id || idx}
+                          className={`transition-colors hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 ${
+                            isLight ? 'text-slate-800' : 'text-slate-200'
+                          }`}
+                        >
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 border-r border-slate-300 dark:border-slate-800">{idx + 1}</td>
+                          <td className="py-2.5 px-2 font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.buyer_name || item.buyer || 'GMS Buyer'}
+                          </td>
+                          <td className="py-2.5 px-2 font-mono text-slate-500 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.booking_date || item.date || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 font-black font-mono text-slate-900 dark:text-white whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.job_no || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 border-r border-slate-300 dark:border-slate-800 whitespace-nowrap font-bold text-slate-700 dark:text-slate-300">
+                            {item.style || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 font-mono font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.sr_gt_no || item.sr_gt || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 font-mono font-bold text-indigo-700 dark:text-indigo-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.store_ref || item.twill_ref || item.s_tape_ref || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.order_no || item.po_no || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 border-r border-slate-300 dark:border-slate-800 whitespace-nowrap">
+                            <div className="font-bold text-slate-800 dark:text-slate-200">{item.item_name || 'Twill Tape'}</div>
+                            <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">{item.colour || item.color || '-'}</div>
+                          </td>
+                          <td className="py-2.5 px-2 font-mono text-center whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.cm || item.size || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 text-center font-bold font-mono text-slate-500 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {item.unit || 'YDS'}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-black font-mono whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {bQty.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-bold font-mono text-emerald-600 dark:text-emerald-400 whitespace-nowrap border-r border-slate-300 dark:border-slate-800">
+                            {rQty.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-2 text-right whitespace-nowrap border-r border-slate-300 dark:border-slate-800 bg-indigo-50/60 dark:bg-indigo-950/30">
+                            <span className="px-2.5 py-1 rounded-lg font-black font-mono text-xs bg-rose-600 text-white shadow-sm border border-rose-700 inline-flex items-center gap-1 animate-pulse">
+                              <Clock className="w-3 h-3" />
+                              <span>{dueQty.toLocaleString()} {item.unit || 'YDS'}</span>
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2 whitespace-nowrap border-r border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-300">
+                            {item.supplier || '-'}
+                          </td>
+                          <td className="py-2.5 px-2 text-slate-500 max-w-[130px] truncate text-center" title={item.remarks}>
+                            {item.remarks || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+
+                  <tfoot className={`font-black text-xs uppercase border-t-2 ${
+                    isLight ? 'bg-slate-100 text-slate-900 border-slate-300' : 'bg-slate-950 text-slate-100 border-slate-700'
+                  }`}>
+                    <tr>
+                      <td colSpan={11} className="py-3 px-3 text-right font-black border-r border-slate-300 dark:border-slate-800">
+                        TOTAL TWILL TAPE PENDING SUMMARY:
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono font-black border-r border-slate-300 dark:border-slate-800">
+                        {twillDueMetrics.totalBooking.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 border-r border-slate-300 dark:border-slate-800">
+                        {twillDueMetrics.totalRecv.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono font-black text-rose-600 dark:text-rose-400 bg-rose-100/80 dark:bg-rose-950/80 border-r border-slate-300 dark:border-slate-800">
+                        {twillDueMetrics.totalDue.toLocaleString()} YDS
                       </td>
                       <td colSpan={2}></td>
                     </tr>

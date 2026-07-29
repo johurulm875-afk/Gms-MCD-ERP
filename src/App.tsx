@@ -2199,6 +2199,7 @@ export default function App() {
               onAddPlanningItem={handleAddPlanningItem}
               onUpdatePlanningItem={handleUpdatePlanningItem}
               onDeletePlanningItem={handleDeletePlanningItem}
+              sewingThreadItems={sewingThreadItems}
               theme={theme}
             />
           )}
@@ -2208,10 +2209,12 @@ export default function App() {
             <DrawstringReport
               items={drawstringItems}
               sewingItems={sewingThreadItems}
+              twillItems={items}
               theme={theme}
               currentUser={currentUser}
               onUpdateItem={handleUpdateDrawstringItem}
               onUpdateSewingItem={handleUpdateSewingBooking}
+              onUpdateTwillItem={handleUpdateBooking}
               onDeleteItem={handleDeleteDrawstringItem}
             />
           )}
