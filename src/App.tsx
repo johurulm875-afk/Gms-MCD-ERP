@@ -593,6 +593,9 @@ export default function App() {
           const iQty = Number(r.issue_qty ?? 0);
           const balQty = r.balance_qty !== undefined ? Number(r.balance_qty) : (r.due_qty !== undefined ? Number(r.due_qty) : Math.max(0, bQty - rQty));
 
+          const qcRaw = r.qc_not_ok ?? r['qc_not_ok'] ?? r['QC NOT OK'] ?? r['QC Status'] ?? r['qc_status'] ?? r['qc'] ?? r['QC'];
+          const isQcNotOk = qcRaw === true || qcRaw === 'true' || qcRaw === 'TRUE' || qcRaw === 'QC NOT OK' || qcRaw === 'NOT OK' || qcRaw === 'Not OK' || qcRaw === 'not ok' || qcRaw === 'YES' || qcRaw === 'yes' || qcRaw === 1 || qcRaw === '1' || String(r.remarks || r.note || r.comments || r['Remarks'] || '').toLowerCase().includes('qc not ok') || String(r.remarks || r.note || r.comments || r['Remarks'] || '').toLowerCase().includes('qc_not_ok');
+
           return {
             ...r,
             id: Number(r.id || r.sl_no || idx + 1),
@@ -615,6 +618,7 @@ export default function App() {
             issue_challan: r.issue_challan || '',
             balance_qty: balQty,
             remarks: r.remarks || '',
+            qc_not_ok: isQcNotOk,
             receive_logs: Array.isArray(r.receive_logs) ? r.receive_logs : [],
             issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
           };
@@ -767,6 +771,9 @@ export default function App() {
           const supplierVal = r['Supplier'] || r.supplier || r.supplier_name || '';
           const remarksVal = r['Remarks'] || r.remarks || r.note || r.comments || '';
 
+          const qcRaw = r.qc_not_ok ?? r['qc_not_ok'] ?? r['QC NOT OK'] ?? r['QC Status'] ?? r['qc_status'] ?? r['qc'] ?? r['QC'];
+          const isQcNotOk = qcRaw === true || qcRaw === 'true' || qcRaw === 'TRUE' || qcRaw === 'QC NOT OK' || qcRaw === 'NOT OK' || qcRaw === 'Not OK' || qcRaw === 'not ok' || qcRaw === 'YES' || qcRaw === 'yes' || qcRaw === 1 || qcRaw === '1' || String(remarksVal).toLowerCase().includes('qc not ok') || String(remarksVal).toLowerCase().includes('qc_not_ok');
+
           return {
             ...r,
             id: Number(r.id || r.sl_no || idx + 1),
@@ -803,6 +810,7 @@ export default function App() {
             issue_challan: iChallan,
             balance_qty: balQty,
             remarks: remarksVal,
+            qc_not_ok: isQcNotOk,
             receive_logs: Array.isArray(r.receive_logs) ? r.receive_logs : [],
             issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
           };

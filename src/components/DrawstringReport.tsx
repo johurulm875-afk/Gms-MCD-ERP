@@ -467,19 +467,23 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
   }, [twillDueItems]);
 
 
+  // Helper to check if an item is QC NOT OK
+  const checkQcNotOk = (item: any) => {
+    if (!item) return false;
+    const val = item.qc_not_ok ?? item['qc_not_ok'] ?? item['QC NOT OK'] ?? item['QC Status'] ?? item['qc_status'] ?? item['qc'] ?? item['QC'];
+    if (val === true || val === 'true' || val === 'TRUE' || val === 'QC NOT OK' || val === 'NOT OK' || val === 'Not OK' || val === 'not ok' || val === 'YES' || val === 'yes' || val === 1 || val === '1') return true;
+    const rem = String(item.remarks || item['Remarks'] || item.note || '').toLowerCase();
+    if (rem.includes('qc not ok') || rem.includes('qc_not_ok') || rem.includes('qc fail') || rem.includes('not ok') || rem.includes('rejected')) return true;
+    return false;
+  };
+
   // 2. QC NOT OK ITEMS
   const sewingQcNotOkItems = useMemo(() => {
-    return sewingItems.filter(item => {
-      const val = item.qc_not_ok;
-      return val === true || val === 'true' || val === 'QC NOT OK' || val === 'NOT OK';
-    });
+    return sewingItems.filter(checkQcNotOk);
   }, [sewingItems]);
 
   const drawstringQcNotOkItems = useMemo(() => {
-    return items.filter(item => {
-      const val = item.qc_not_ok;
-      return val === true || val === 'true' || val === 'QC NOT OK' || val === 'NOT OK';
-    });
+    return items.filter(checkQcNotOk);
   }, [items]);
 
   const totalQcNotOkCount = sewingQcNotOkItems.length + drawstringQcNotOkItems.length;
@@ -2773,7 +2777,7 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
                 {filteredAllSewing.map((item) => {
-                  const isQcNotOk = item.qc_not_ok === true || item.qc_not_ok === 'true' || item.qc_not_ok === 'QC NOT OK';
+                  const isQcNotOk = checkQcNotOk(item);
                   return (
                     <tr key={item.id} className={isQcNotOk ? 'bg-rose-500/10' : ''}>
                       <td className="py-2.5 px-2 font-bold border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>
@@ -2849,7 +2853,7 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
                 {filteredAllDrawstring.map((item) => {
-                  const isQcNotOk = item.qc_not_ok === true || item.qc_not_ok === 'true' || item.qc_not_ok === 'QC NOT OK';
+                  const isQcNotOk = checkQcNotOk(item);
                   return (
                     <tr key={item.id} className={isQcNotOk ? 'bg-rose-500/10' : ''}>
                       <td className="py-2.5 px-2 font-bold border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>

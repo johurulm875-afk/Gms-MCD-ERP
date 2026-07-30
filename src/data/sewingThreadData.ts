@@ -62,7 +62,8 @@ export const INITIAL_SEWING_THREAD_DATA: Omit<SewingThreadItem, 'id'>[] = [
     issue_date: '',
     issue_challan: '',
     balance_qty: 0.0,
-    remarks: 'Pending arrival at store'
+    remarks: 'Pending arrival at store (QC NOT OK - Shade mismatch)',
+    qc_not_ok: true
   },
   {
     buyer_name: 'DIADORA',
