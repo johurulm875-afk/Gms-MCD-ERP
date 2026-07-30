@@ -46,7 +46,41 @@ export const formatMonthFromCCD = (ccdRaw: string): { monthKey: string; monthLab
     }
   }
 
-  // 2. Check standard ISO or YYYY-MM-DD or YYYY/MM/DD
+  // 2. Pattern DD-MMM-YY or DD-MMM-YYYY (e.g. "31-Aug-26", "31-Aug-2026", "31/Aug/26", "31 Aug 2026")
+  const ddMmmYyMatch = trimmed.match(/^(\d{1,2})[-/.\s]+([a-zA-Z]{3,9})[-/.\s]+(\d{2,4})$/);
+  if (ddMmmYyMatch) {
+    const mStr = ddMmmYyMatch[2].toLowerCase();
+    const yStr = ddMmmYyMatch[3];
+    const year = yStr.length === 2 ? `20${yStr}` : yStr;
+    const monthNamesFull = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+    const monthNamesShort = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    
+    for (let i = 0; i < 12; i++) {
+      if (mStr === monthNamesFull[i] || mStr === monthNamesShort[i]) {
+        const mName = monthNamesShort[i].toUpperCase();
+        return { monthKey: `${year}-${String(i + 1).padStart(2, '0')}`, monthLabel: `${mName} ${year}` };
+      }
+    }
+  }
+
+  // 3. Pattern MMM-DD-YY or MMM-DD-YYYY (e.g. "Aug-31-26")
+  const mmmDdYyMatch = trimmed.match(/^([a-zA-Z]{3,9})[-/.\s]+(\d{1,2})[-/.\s]+(\d{2,4})$/);
+  if (mmmDdYyMatch) {
+    const mStr = mmmDdYyMatch[1].toLowerCase();
+    const yStr = mmmDdYyMatch[3];
+    const year = yStr.length === 2 ? `20${yStr}` : yStr;
+    const monthNamesFull = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+    const monthNamesShort = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    
+    for (let i = 0; i < 12; i++) {
+      if (mStr === monthNamesFull[i] || mStr === monthNamesShort[i]) {
+        const mName = monthNamesShort[i].toUpperCase();
+        return { monthKey: `${year}-${String(i + 1).padStart(2, '0')}`, monthLabel: `${mName} ${year}` };
+      }
+    }
+  }
+
+  // 4. Standard ISO or YYYY-MM-DD or YYYY/MM/DD
   const isoMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (isoMatch) {
     const year = isoMatch[1];
@@ -58,7 +92,7 @@ export const formatMonthFromCCD = (ccdRaw: string): { monthKey: string; monthLab
     }
   }
 
-  // 3. Check DD-MM-YYYY or DD/MM/YYYY
+  // 5. Standard DD-MM-YYYY or DD/MM/YYYY
   const dmyMatch = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
   if (dmyMatch) {
     const year = dmyMatch[3];
@@ -70,7 +104,7 @@ export const formatMonthFromCCD = (ccdRaw: string): { monthKey: string; monthLab
     }
   }
 
-  // 4. Check Month Name in string (e.g. "August 2026", "Aug-26", "26-Aug", "Aug 2026", "August")
+  // 6. Generic month search in string
   const monthNamesFull = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
   const monthNamesShort = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
@@ -78,10 +112,13 @@ export const formatMonthFromCCD = (ccdRaw: string): { monthKey: string; monthLab
   for (let i = 0; i < 12; i++) {
     if (lower.includes(monthNamesFull[i]) || lower.includes(monthNamesShort[i])) {
       const mName = monthNamesShort[i].toUpperCase();
-      const yearMatch = trimmed.match(/\b(20\d{2}|\d{2})\b/);
+      const y4 = trimmed.match(/\b(20\d{2})\b/);
       let year = '2026';
-      if (yearMatch) {
-        year = yearMatch[1].length === 2 ? `20${yearMatch[1]}` : yearMatch[1];
+      if (y4) {
+        year = y4[1];
+      } else {
+        const y2 = trimmed.match(/(?:[-/.\s]|^)(\d{2})$/);
+        if (y2) year = `20${y2[1]}`;
       }
       return { monthKey: `${year}-${String(i + 1).padStart(2, '0')}`, monthLabel: `${mName} ${year}` };
     }
@@ -119,10 +156,52 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
   // Detail Modal State
   const [selectedMatchRow, setSelectedMatchRow] = useState<PlanningAuditOrderRow | null>(null);
 
+  // Dynamic helper to extract field value from any db row object (case-insensitive key search)
+  const getDbFieldValue = (dbObj: Record<string, any>, keywords: string[]): string => {
+    if (!dbObj) return '';
+    const entries = Object.entries(dbObj);
+    
+    // 1. Exact normalized key match
+    for (const keyword of keywords) {
+      const normKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!normKeyword) continue;
+      for (const [key, val] of entries) {
+        if (val === undefined || val === null) continue;
+        const cleanKey = key.trim().replace(/^[\uFEFF\s"']+|[\s"']+$|[\r\n]+/g, '');
+        const normKey = cleanKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normKey === normKeyword) {
+          const s = String(val).trim();
+          if (s !== '' && s !== 'undefined' && s !== 'null') return s;
+        }
+      }
+    }
+
+    // 2. Substring key match
+    for (const keyword of keywords) {
+      const normKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!normKeyword || normKeyword.length < 2) continue;
+      for (const [key, val] of entries) {
+        if (val === undefined || val === null) continue;
+        const cleanKey = key.trim().replace(/^[\uFEFF\s"']+|[\s"']+$|[\r\n]+/g, '');
+        const normKey = cleanKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normKey.includes(normKeyword) || normKeyword.includes(normKey)) {
+          const s = String(val).trim();
+          if (s !== '' && s !== 'undefined' && s !== 'null') return s;
+        }
+      }
+    }
+
+    return '';
+  };
+
   // 1. Fetch complete database records from Supabase (`supabase_sewing_thread_all_rows` and `sewing_thread`)
   const fetchSupabaseSewingRecords = async () => {
     setIsLoadingDb(true);
-    let combined: SewingThreadItem[] = [...sewingThreadItems];
+    const combined: { sourceTable: string; item: SewingThreadItem }[] = [];
+
+    sewingThreadItems.forEach(item => {
+      combined.push({ sourceTable: 'props', item });
+    });
 
     try {
       // Query table 1: supabase_sewing_thread_all_rows
@@ -131,7 +210,9 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
         .select('*');
 
       if (!err1 && allRowsData && allRowsData.length > 0) {
-        combined = [...combined, ...allRowsData];
+        allRowsData.forEach((row: any) => {
+          combined.push({ sourceTable: 'all_rows', item: row });
+        });
       }
 
       // Query table 2: sewing_thread
@@ -140,17 +221,28 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
         .select('*');
 
       if (!err2 && stData && stData.length > 0) {
-        combined = [...combined, ...stData];
+        stData.forEach((row: any) => {
+          combined.push({ sourceTable: 'sewing_thread', item: row });
+        });
       }
     } catch (e) {
       console.warn("Notice fetching sewing thread records for audit:", e);
     } finally {
-      // Deduplicate by ID / store_ref + style + job_no
+      // Unique map with table prefix to prevent ID collisions
       const uniqueMap = new Map<string, SewingThreadItem>();
-      combined.forEach(item => {
-        const key = item.id ? `id_${item.id}` : `${item.store_ref || item.s_thread_ref}_${item.style}_${item.job_no}_${item.colour}`;
-        if (!uniqueMap.has(key)) {
-          uniqueMap.set(key, item);
+      combined.forEach(({ sourceTable, item }) => {
+        const srVal = getDbFieldValue(item, ['sr_gt', 'sr/gt', 's_thread_ref', 'store_ref']);
+        const styleVal = getDbFieldValue(item, ['style']);
+        const jobVal = getDbFieldValue(item, ['job_no', 'job']);
+        const orderVal = getDbFieldValue(item, ['order_no', 'po_no', 'po']);
+        const colourVal = getDbFieldValue(item, ['colour', 'color']);
+
+        const uniqueKey = item.id 
+          ? `${sourceTable}_${item.id}` 
+          : `${sourceTable}_${srVal}_${styleVal}_${jobVal}_${orderVal}_${colourVal}`;
+
+        if (!uniqueMap.has(uniqueKey)) {
+          uniqueMap.set(uniqueKey, item);
         }
       });
       setDbSewingItems(Array.from(uniqueMap.values()));
@@ -172,51 +264,149 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
       .replace(/[^a-z0-9]/g, '');
   };
 
+  // Clean normalizer that strips common prefixes like "po no:", "po:", "order no:", "job no:"
+  const normalizeCode = (str: any) => {
+    if (!str) return '';
+    const cleaned = String(str)
+      .toLowerCase()
+      .replace(/\b(po\s*no|po\s*#|po|order\s*no|order\s*#|order|job\s*no|job\s*#|job|style\s*ref|style)\b/gi, '')
+      .trim();
+    return normalize(cleaned || str);
+  };
+
   // Cross Matching logic function
   const matchRowAgainstDatabase = (
     storeRef: string,
     styleName: string,
     jobNumber: string,
     buyer: string,
+    orderNo: string,
     dbList: SewingThreadItem[]
   ): SewingThreadItem[] => {
     const normStoreRef = normalize(storeRef);
-    const normStyle = normalize(styleName);
+    const codeStoreRef = normalizeCode(storeRef);
+
+    const normOrderNo = normalize(orderNo);
+    const codeOrderNo = normalizeCode(orderNo);
+
     const normJobNo = normalize(jobNumber);
+    const codeJobNo = normalizeCode(jobNumber);
+
+    const normStyle = normalize(styleName);
     const normBuyer = normalize(buyer);
 
-    const matches = dbList.filter(db => {
-      const dbStoreRef = normalize(db.store_ref || db.s_thread_ref || db.sr_gt || '');
-      const dbStyle = normalize(db.style || '');
-      const dbJobNo = normalize(db.job_no || '');
-      const dbBuyer = normalize(db.buyer_name || db.buyer || '');
+    // Helper to deduplicate records (e.g. if present in multiple tables or duplicate queries)
+    const deduplicateMatches = (list: SewingThreadItem[]): SewingThreadItem[] => {
+      const map = new Map<string, SewingThreadItem>();
+      list.forEach(item => {
+        const sr = getDbFieldValue(item, ['sr_gt', 'sr/gt', 's_thread_ref', 'store_ref']);
+        const po = getDbFieldValue(item, ['order_no', 'po_no', 'po']);
+        const col = getDbFieldValue(item, ['colour', 'color']);
+        const count = getDbFieldValue(item, ['count', 'thread_count']);
+        const meter = getDbFieldValue(item, ['meter']);
+        const qty = getDbFieldValue(item, ['booking_qty', 'receive_qty']);
 
-      // Condition A: Store Ref exact match
-      if (normStoreRef && dbStoreRef && normStoreRef === dbStoreRef) {
-        return true;
-      }
-
-      // Condition B: Job Number + Style Name match
-      if (normJobNo && normStyle && dbJobNo && dbStyle && normJobNo === dbJobNo && normStyle === dbStyle) {
-        return true;
-      }
-
-      // Condition C: Job Number match alone (if non-empty and long enough)
-      if (normJobNo && dbJobNo && normJobNo.length >= 3 && normJobNo === dbJobNo) {
-        if (!normBuyer || !dbBuyer || normBuyer === dbBuyer) {
-          return true;
+        const key = `${normalize(sr)}_${normalize(po)}_${normalize(col)}_${normalize(count)}_${normalize(meter)}_${normalize(qty)}`;
+        if (!map.has(key)) {
+          map.set(key, item);
         }
+      });
+      return Array.from(map.values());
+    };
+
+    // --- STEP 1: Store Ref / SR-GT Specific Match ---
+    if (normStoreRef && normStoreRef !== '-') {
+      const storeRefMatches = dbList.filter(db => {
+        const dbStoreRefRaw = getDbFieldValue(db, ['sr_gt', 'sr/gt', 'sr / gt', 's_thread_ref', 'store_ref', 'store ref', 'twill_ref', 'tape_ref']);
+        const dbStoreRef = normalize(dbStoreRefRaw);
+        const dbCodeStoreRef = normalizeCode(dbStoreRefRaw);
+
+        if (dbStoreRef && (normStoreRef === dbStoreRef || codeStoreRef === dbCodeStoreRef)) return true;
+        if (normStoreRef.length >= 4 && dbStoreRef && (dbStoreRef.includes(normStoreRef) || normStoreRef.includes(dbStoreRef))) return true;
+        if (codeStoreRef.length >= 4 && dbCodeStoreRef && (dbCodeStoreRef.includes(codeStoreRef) || codeStoreRef.includes(dbCodeStoreRef))) return true;
+
+        // Check if store ref code is inside ANY DB field for this row
+        if (codeStoreRef.length >= 5) {
+          const dbVals = Object.values(db).map(v => normalizeCode(v));
+          if (dbVals.some(v => v === codeStoreRef || (v.length >= 5 && v.includes(codeStoreRef)))) return true;
+        }
+
+        return false;
+      });
+
+      if (storeRefMatches.length > 0) {
+        return deduplicateMatches(storeRefMatches);
       }
+    }
 
-      // Condition D: Store Ref contained in database store ref / s_thread_ref
-      if (normStoreRef && dbStoreRef && (dbStoreRef.includes(normStoreRef) || normStoreRef.includes(dbStoreRef))) {
-        return true;
+    // --- STEP 2: Order No / PO No Specific Match ---
+    if (normOrderNo && normOrderNo !== '-') {
+      const orderNoMatches = dbList.filter(db => {
+        const dbOrderNoRaw = getDbFieldValue(db, ['order_no', 'order no', 'po_no', 'po no', 'po number', 'po', 'orderno']);
+        const dbOrderNo = normalize(dbOrderNoRaw);
+        const dbCodeOrderNo = normalizeCode(dbOrderNoRaw);
+
+        if (dbOrderNo && (normOrderNo === dbOrderNo || codeOrderNo === dbCodeOrderNo)) return true;
+        if (codeOrderNo.length >= 4 && dbCodeOrderNo && (dbCodeOrderNo.includes(codeOrderNo) || codeOrderNo.includes(dbCodeOrderNo))) return true;
+
+        if (codeOrderNo.length >= 5) {
+          const dbVals = Object.values(db).map(v => normalizeCode(v));
+          if (dbVals.some(v => v === codeOrderNo || (v.length >= 5 && v.includes(codeOrderNo)))) return true;
+        }
+
+        return false;
+      });
+
+      if (orderNoMatches.length > 0) {
+        return deduplicateMatches(orderNoMatches);
       }
+    }
 
-      return false;
-    });
+    // --- STEP 3: Job Number Match ---
+    if (normJobNo && normJobNo !== '-') {
+      const jobNoMatches = dbList.filter(db => {
+        const dbJobNoRaw = getDbFieldValue(db, ['job_no', 'job no', 'job number', 'job']);
+        const dbJobNo = normalize(dbJobNoRaw);
+        const dbCodeJobNo = normalizeCode(dbJobNoRaw);
 
-    return matches;
+        if (dbJobNo && (normJobNo === dbJobNo || codeJobNo === dbCodeJobNo)) return true;
+        if (codeJobNo.length >= 4 && dbCodeJobNo && (dbCodeJobNo.includes(codeJobNo) || codeJobNo.includes(dbCodeJobNo))) return true;
+
+        return false;
+      });
+
+      if (jobNoMatches.length > 0) {
+        return deduplicateMatches(jobNoMatches);
+      }
+    }
+
+    // --- IMPORTANT: If Store Ref or Order No or Job No WAS provided in Excel, but returned 0 matches above,
+    // do NOT fall back to style name alone! Because this specific PO/Store Ref booking doesn't exist yet!
+    const hasIdentifier = (normStoreRef && normStoreRef !== '-') || (normOrderNo && normOrderNo !== '-') || (normJobNo && normJobNo !== '-');
+    if (hasIdentifier) {
+      return [];
+    }
+
+    // --- STEP 4: Fallback for generic Excel rows with NO storeRef, NO orderNo, NO jobNo ---
+    if (normStyle && normStyle.length >= 3) {
+      const styleMatches = dbList.filter(db => {
+        const dbStyleRaw = getDbFieldValue(db, ['style', 'style_name', 'style name', 'style/ref']);
+        const dbStyle = normalize(dbStyleRaw);
+        const dbBuyerRaw = getDbFieldValue(db, ['buyer_name', 'buyer', 'buyer name', 'customer']);
+        const dbBuyer = normalize(dbBuyerRaw);
+
+        if (normStyle === dbStyle) {
+          if (!normBuyer || !dbBuyer || normBuyer === dbBuyer || dbBuyer.includes(normBuyer) || normBuyer.includes(dbBuyer)) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      return deduplicateMatches(styleMatches);
+    }
+
+    return [];
   };
 
   // Parse Excel file upload with dynamic column auto-fitting & header auto-detection
@@ -380,7 +570,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
           const qtyPcs = Number(rawQty.replace(/[^0-9.]/g, '')) || 0;
 
           // Execute Cross-Matching
-          const matchedRecords = matchRowAgainstDatabase(storeRef, styleName, jobNumber, buyer, sourceDb);
+          const matchedRecords = matchRowAgainstDatabase(storeRef, styleName, jobNumber, buyer, orderNo, sourceDb);
           const status: 'MATCHED' | 'BOOKING DUE' = matchedRecords.length > 0 ? 'MATCHED' : 'BOOKING DUE';
 
           const { monthKey, monthLabel } = formatMonthFromCCD(ccd || '');
@@ -422,7 +612,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
     const sourceDb = dbSewingItems.length > 0 ? dbSewingItems : sewingThreadItems;
 
     const reMatched = uploadedRows.map(row => {
-      const matchedRecords = matchRowAgainstDatabase(row.storeRef, row.styleName, row.jobNumber, row.buyer, sourceDb);
+      const matchedRecords = matchRowAgainstDatabase(row.storeRef, row.styleName, row.jobNumber, row.buyer, row.orderNo, sourceDb);
       const status: 'MATCHED' | 'BOOKING DUE' = matchedRecords.length > 0 ? 'MATCHED' : 'BOOKING DUE';
       return {
         ...row,
@@ -455,7 +645,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
 
     setTimeout(() => {
       const parsed: PlanningAuditOrderRow[] = sampleOrders.map((row, index) => {
-        const matchedRecords = matchRowAgainstDatabase(row.storeRef, row.styleName, row.jobNumber, row.buyer, sourceDb);
+        const matchedRecords = matchRowAgainstDatabase(row.storeRef, row.styleName, row.jobNumber, row.buyer, row.orderNo, sourceDb);
         const status: 'MATCHED' | 'BOOKING DUE' = matchedRecords.length > 0 ? 'MATCHED' : 'BOOKING DUE';
         const { monthKey, monthLabel } = formatMonthFromCCD(row.ccd);
 
@@ -1312,7 +1502,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
               </div>
 
               {/* SECTION 2: SUPABASE SEWING THREAD MATCHES */}
-              <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <div className="space-y-4 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
                     <Database className="w-4 h-4 text-indigo-500" />
@@ -1333,6 +1523,87 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
                   </div>
                 ) : (
                   (() => {
+                    // 1. Calculate aggregated stock & present balance metrics across all matched DB records
+                    let totBooking = 0;
+                    let totReceive = 0;
+                    let totIssue = 0;
+                    let totBalance = 0;
+
+                    type ColorGroup = {
+                      colour: string;
+                      count: string;
+                      meter: string;
+                      supplier: string;
+                      orderNo: string;
+                      rcvdChallan: string;
+                      rcvdDate: string;
+                      bookingQty: number;
+                      receiveQty: number;
+                      issueQty: number;
+                      balanceQty: number;
+                      presentBalance: number;
+                      rowCount: number;
+                    };
+
+                    const colorGroupMap = new Map<string, ColorGroup>();
+
+                    selectedMatchRow.matchedRecords.forEach(item => {
+                      const col = getDbFieldValue(item, ['colour', 'color']) || 'GENERAL / NOS';
+                      const countVal = getDbFieldValue(item, ['count', 'thread_count']);
+                      const meterVal = getDbFieldValue(item, ['meter']);
+                      const suppVal = getDbFieldValue(item, ['supplier']);
+                      const ordVal = getDbFieldValue(item, ['order_no', 'po_no', 'po']);
+                      const chalVal = getDbFieldValue(item, ['rcvd_challan', 'receive_challan', 'challan']);
+                      const dateVal = getDbFieldValue(item, ['rcvd_date', 'receive_date', 'date']);
+
+                      const bQty = Number(getDbFieldValue(item, ['booking_qty'])) || (typeof item.booking_qty === 'number' ? item.booking_qty : 0);
+                      const rQty = Number(getDbFieldValue(item, ['receive_qty', 'rcvd_qty'])) || (typeof item.receive_qty === 'number' ? item.receive_qty : 0);
+                      const iQty = Number(getDbFieldValue(item, ['issue_qty', 'iss_qty'])) || (typeof item.issue_qty === 'number' ? item.issue_qty : 0);
+                      let balQty = Number(getDbFieldValue(item, ['balance_qty'])) || (typeof item.balance_qty === 'number' ? item.balance_qty : 0);
+
+                      // Calculate present balance = receiveQty - issueQty (or balanceQty if defined)
+                      const presentBal = (rQty > 0 || iQty > 0) ? (rQty - iQty) : (balQty || bQty);
+
+                      totBooking += bQty;
+                      totReceive += rQty;
+                      totIssue += iQty;
+                      totBalance += presentBal;
+
+                      const key = `${col.toUpperCase().trim()}_${countVal}_${meterVal}`;
+                      if (!colorGroupMap.has(key)) {
+                        colorGroupMap.set(key, {
+                          colour: col.toUpperCase().trim(),
+                          count: countVal,
+                          meter: meterVal,
+                          supplier: suppVal,
+                          orderNo: ordVal,
+                          rcvdChallan: chalVal,
+                          rcvdDate: dateVal,
+                          bookingQty: bQty,
+                          receiveQty: rQty,
+                          issueQty: iQty,
+                          balanceQty: balQty,
+                          presentBalance: presentBal,
+                          rowCount: 1
+                        });
+                      } else {
+                        const existing = colorGroupMap.get(key)!;
+                        existing.bookingQty += bQty;
+                        existing.receiveQty += rQty;
+                        existing.issueQty += iQty;
+                        existing.balanceQty += balQty;
+                        existing.presentBalance += presentBal;
+                        existing.rowCount += 1;
+                        if (!existing.supplier && suppVal) existing.supplier = suppVal;
+                        if (!existing.orderNo && ordVal) existing.orderNo = ordVal;
+                        if (!existing.rcvdChallan && chalVal) existing.rcvdChallan = chalVal;
+                        if (!existing.rcvdDate && dateVal) existing.rcvdDate = dateVal;
+                      }
+                    });
+
+                    const colorGroups = Array.from(colorGroupMap.values());
+
+                    // Dynamic keys for raw table view
                     const priorityOrder = [
                       'buyer_name', 'buyer', 'style', 'job_no', 's_thread_ref', 'store_ref', 'sr_gt',
                       'colour', 'color', 'count', 'thread_count', 'meter',
@@ -1381,58 +1652,181 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
                     };
 
                     return (
-                      <div className="overflow-x-auto rounded-2xl border border-slate-300 dark:border-slate-800">
-                        <table className="w-full text-xs text-left border-collapse min-w-[850px]">
-                          <thead className={`font-black uppercase text-[10px] tracking-wider border-b ${
-                            isLight ? 'bg-indigo-950 text-indigo-200' : 'bg-slate-950 text-indigo-300'
+                      <div className="space-y-4">
+                        {/* KPI STAT CARDS FOR PRESENT BALANCE & STOCK STATUS */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className={`p-3.5 rounded-2xl border ${
+                            isLight ? 'bg-indigo-50/70 border-indigo-200' : 'bg-slate-900 border-indigo-950'
                           }`}>
-                            <tr>
-                              <th className="py-2.5 px-3 text-center border-r border-indigo-800 w-10">#</th>
-                              {dynamicKeys.map(k => (
-                                <th 
-                                  key={k} 
-                                  className={`py-2.5 px-3 border-r border-indigo-800 whitespace-nowrap ${
-                                    k.includes('qty') || k.includes('amount') || k.includes('pcs') ? 'text-right' : ''
-                                  }`}
-                                >
-                                  {formatLabel(k)}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Booking Qty</p>
+                            <p className="text-base font-black font-mono text-indigo-700 dark:text-indigo-300 mt-0.5">
+                              {totBooking.toLocaleString()} <span className="text-[10px] font-normal">Pcs/Cones</span>
+                            </p>
+                          </div>
 
-                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                            {selectedMatchRow.matchedRecords.map((item, idx) => (
-                              <tr key={item.id || idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-950/30">
-                                <td className="py-2.5 px-3 text-center font-mono text-slate-400 border-r border-slate-300 dark:border-slate-800">
-                                  {idx + 1}
-                                </td>
-                                {dynamicKeys.map(k => {
-                                  const val = item[k];
-                                  const isNum = typeof val === 'number' || (k.includes('qty') && !isNaN(Number(val)));
-                                  const displayVal = isNum && val !== '' ? Number(val).toLocaleString() : (val !== undefined && val !== null && String(val).trim() !== '' ? String(val) : '-');
+                          <div className={`p-3.5 rounded-2xl border ${
+                            isLight ? 'bg-blue-50/70 border-blue-200' : 'bg-slate-900 border-blue-950'
+                          }`}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Receive Qty</p>
+                            <p className="text-base font-black font-mono text-blue-700 dark:text-blue-300 mt-0.5">
+                              {totReceive.toLocaleString()} <span className="text-[10px] font-normal">Pcs/Cones</span>
+                            </p>
+                          </div>
 
-                                  return (
-                                    <td 
+                          <div className={`p-3.5 rounded-2xl border ${
+                            isLight ? 'bg-amber-50/70 border-amber-200' : 'bg-slate-900 border-amber-950'
+                          }`}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Issue Qty</p>
+                            <p className="text-base font-black font-mono text-amber-700 dark:text-amber-300 mt-0.5">
+                              {totIssue.toLocaleString()} <span className="text-[10px] font-normal">Pcs/Cones</span>
+                            </p>
+                          </div>
+
+                          <div className={`p-3.5 rounded-2xl border shadow-sm ${
+                            totBalance > 0
+                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-200'
+                              : 'bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-200'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-black uppercase tracking-wider">Present Balance (Stock)</p>
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold ${
+                                totBalance > 0 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                              }`}>
+                                {totBalance > 0 ? 'AVAILABLE' : 'NO BALANCE'}
+                              </span>
+                            </div>
+                            <p className="text-base font-black font-mono mt-0.5">
+                              {totBalance.toLocaleString()} <span className="text-[10px] font-normal">Cones</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* COLOUR-WISE BREAKDOWN & PRESENT BALANCE TABLE */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h5 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              <span>Colour-wise Stock & Present Balance Summary ({colorGroups.length} Colours)</span>
+                            </h5>
+                            <span className="text-[11px] font-mono font-bold text-slate-500">
+                              Total Raw Rows: {selectedMatchRow.matchedRecords.length}
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-2xl border border-slate-300 dark:border-slate-800 shadow-xs">
+                            <table className="w-full text-xs text-left border-collapse min-w-[900px]">
+                              <thead className={`font-black uppercase text-[10px] tracking-wider border-b ${
+                                isLight ? 'bg-indigo-950 text-indigo-100' : 'bg-slate-950 text-indigo-300'
+                              }`}>
+                                <tr>
+                                  <th className="py-2.5 px-3 text-center border-r border-indigo-800 w-10">#</th>
+                                  <th className="py-2.5 px-3 border-r border-indigo-800">Colour Name</th>
+                                  <th className="py-2.5 px-3 border-r border-indigo-800">Count</th>
+                                  <th className="py-2.5 px-3 border-r border-indigo-800">Meter / Cone</th>
+                                  <th className="py-2.5 px-3 border-r border-indigo-800">Supplier</th>
+                                  <th className="py-2.5 px-3 text-right border-r border-indigo-800">Booking Qty</th>
+                                  <th className="py-2.5 px-3 text-right border-r border-indigo-800">Receive Qty</th>
+                                  <th className="py-2.5 px-3 text-right border-r border-indigo-800">Issue Qty</th>
+                                  <th className="py-2.5 px-3 text-right border-r border-indigo-800 bg-emerald-900/60 text-emerald-200">Present Balance</th>
+                                  <th className="py-2.5 px-3 border-r border-indigo-800">Rcvd Challan</th>
+                                  <th className="py-2.5 px-3 text-center">Rcvd Date</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
+                                {colorGroups.map((cg, idx) => (
+                                  <tr key={idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-950/30">
+                                    <td className="py-2.5 px-3 text-center font-mono text-slate-400 border-r border-slate-300 dark:border-slate-800">
+                                      {idx + 1}
+                                    </td>
+                                    <td className="py-2.5 px-3 font-extrabold text-slate-900 dark:text-white border-r border-slate-300 dark:border-slate-800">
+                                      <span className="px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-900 dark:text-indigo-200 font-black border border-indigo-200 dark:border-indigo-800">
+                                        {cg.colour}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 font-mono border-r border-slate-300 dark:border-slate-800">{cg.count || '-'}</td>
+                                    <td className="py-2.5 px-3 font-mono border-r border-slate-300 dark:border-slate-800">{cg.meter || '-'}</td>
+                                    <td className="py-2.5 px-3 border-r border-slate-300 dark:border-slate-800">{cg.supplier || '-'}</td>
+                                    <td className="py-2.5 px-3 text-right font-mono font-bold border-r border-slate-300 dark:border-slate-800">
+                                      {cg.bookingQty.toLocaleString()}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-600 dark:text-blue-400 border-r border-slate-300 dark:border-slate-800">
+                                      {cg.receiveQty.toLocaleString()}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-600 dark:text-amber-400 border-r border-slate-300 dark:border-slate-800">
+                                      {cg.issueQty.toLocaleString()}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right font-mono font-black text-emerald-700 dark:text-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/30 border-r border-slate-300 dark:border-slate-800">
+                                      {cg.presentBalance.toLocaleString()}
+                                    </td>
+                                    <td className="py-2.5 px-3 font-mono text-[11px] border-r border-slate-300 dark:border-slate-800">{cg.rcvdChallan || '-'}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono text-[11px]">{cg.rcvdDate || '-'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* DETAILED RAW DATABASE TRANSACTIONS TABLE */}
+                        <details className="group">
+                          <summary className="text-xs font-bold text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline py-1 flex items-center gap-1.5">
+                            <span>▶ View All {selectedMatchRow.matchedRecords.length} Raw Database Records</span>
+                          </summary>
+
+                          <div className="mt-2 overflow-x-auto rounded-2xl border border-slate-300 dark:border-slate-800">
+                            <table className="w-full text-xs text-left border-collapse min-w-[850px]">
+                              <thead className={`font-black uppercase text-[10px] tracking-wider border-b ${
+                                isLight ? 'bg-indigo-950 text-indigo-200' : 'bg-slate-950 text-indigo-300'
+                              }`}>
+                                <tr>
+                                  <th className="py-2.5 px-3 text-center border-r border-indigo-800 w-10">#</th>
+                                  {dynamicKeys.map(k => (
+                                    <th 
                                       key={k} 
-                                      className={`py-2.5 px-3 border-r border-slate-300 dark:border-slate-800 whitespace-nowrap ${
-                                        isNum ? 'text-right font-mono font-bold' : ''
-                                      } ${
-                                        k === 's_thread_ref' || k === 'store_ref' ? 'font-mono font-bold text-indigo-600 dark:text-indigo-400' : ''
-                                      } ${
-                                        k === 'receive_qty' ? 'text-emerald-600 dark:text-emerald-400' : ''
-                                      } ${
-                                        k === 'balance_qty' ? 'text-rose-600 dark:text-rose-400 font-black' : ''
+                                      className={`py-2.5 px-3 border-r border-indigo-800 whitespace-nowrap ${
+                                        k.includes('qty') || k.includes('amount') || k.includes('pcs') ? 'text-right' : ''
                                       }`}
                                     >
-                                      {displayVal}
+                                      {formatLabel(k)}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+
+                              <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
+                                {selectedMatchRow.matchedRecords.map((item, idx) => (
+                                  <tr key={item.id || idx} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-950/30">
+                                    <td className="py-2.5 px-3 text-center font-mono text-slate-400 border-r border-slate-300 dark:border-slate-800">
+                                      {idx + 1}
                                     </td>
-                                  );
-                                })}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                    {dynamicKeys.map(k => {
+                                      const val = item[k];
+                                      const isNum = typeof val === 'number' || (k.includes('qty') && !isNaN(Number(val)));
+                                      const displayVal = isNum && val !== '' ? Number(val).toLocaleString() : (val !== undefined && val !== null && String(val).trim() !== '' ? String(val) : '-');
+
+                                      return (
+                                        <td 
+                                          key={k} 
+                                          className={`py-2.5 px-3 border-r border-slate-300 dark:border-slate-800 whitespace-nowrap ${
+                                            isNum ? 'text-right font-mono font-bold' : ''
+                                          } ${
+                                            k === 's_thread_ref' || k === 'store_ref' ? 'font-mono font-bold text-indigo-600 dark:text-indigo-400' : ''
+                                          } ${
+                                            k === 'receive_qty' ? 'text-emerald-600 dark:text-emerald-400' : ''
+                                          } ${
+                                            k === 'balance_qty' ? 'text-rose-600 dark:text-rose-400 font-black' : ''
+                                          }`}
+                                        >
+                                          {displayVal}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </details>
                       </div>
                     );
                   })()
