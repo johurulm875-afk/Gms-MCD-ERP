@@ -1546,8 +1546,6 @@ export default function App() {
     const columns: ExcelColumnDef[] = [
       { header: 'SL', key: 'sl', width: 6, align: 'center' },
       { header: 'Buyer Name', key: 'buyer_name', width: 18, align: 'left' },
-      { header: 'Booking Date', key: 'date', width: 13, align: 'center' },
-      { header: 'Booking Challan', key: 'booking_challan', width: 16, align: 'left' },
       { header: 'Style', key: 'style', width: 18, align: 'left' },
       { header: 'Order No', key: 'order_no', width: 14, align: 'left' },
       { header: 'Booking Ref.', key: 'store_ref', width: 14, align: 'left' },
@@ -1564,6 +1562,7 @@ export default function App() {
       { header: 'Issue Date', key: 'issue_date', width: 13, align: 'center' },
       { header: 'Issue Challan', key: 'issue_challan', width: 15, align: 'left' },
       { header: 'Balance Qty (Yds)', key: 'balance_qty', type: 'number', width: 16, align: 'right' },
+      { header: 'Batch No', key: 'batch_no', width: 14, align: 'left' },
       { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
     ];
 
@@ -1592,16 +1591,14 @@ export default function App() {
 
   const exportToCSV = () => {
     const headers = [
-      'id', 'buyer_name', 'date', 'booking_challan', 'style', 'order_no', 'store_ref',
+      'id', 'buyer_name', 'style', 'order_no', 'store_ref',
       'colour', 'item_name', 'cm', 'yds', 'booking_qty', 'receive_qty', 'receive_date',
-      'receive_challan', 'issue_qty', 'issue_date', 'issue_challan', 'balance_qty', 'remarks'
+      'receive_challan', 'issue_qty', 'issue_date', 'issue_challan', 'balance_qty', 'batch_no', 'remarks'
     ];
 
     const rows = filteredItems.map(item => [
       item.id,
       `"${(item.buyer_name || '').replace(/"/g, '""')}"`,
-      `"${item.date || ''}"`,
-      `"${item.booking_challan || ''}"`,
       `"${(item.style || '').replace(/"/g, '""')}"`,
       `"${(item.order_no || '').replace(/"/g, '""')}"`,
       `"${item.store_ref || ''}"`,
@@ -1617,6 +1614,7 @@ export default function App() {
       `"${item.issue_date || ''}"`,
       `"${item.issue_challan || ''}"`,
       item.balance_qty,
+      `"${(item.batch_no || '').replace(/"/g, '""')}"`,
       `"${(item.remarks || '').replace(/"/g, '""')}"`
     ]);
 

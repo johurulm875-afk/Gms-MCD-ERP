@@ -551,6 +551,32 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
               })
             )}
           </tbody>
+          <tfoot className="sticky bottom-0 z-30 font-black text-xs uppercase bg-slate-900 text-white border-t-2 border-indigo-600 shadow-2xl">
+            <tr>
+              <td colSpan={10} className="py-3 px-3 text-right font-black tracking-wider text-amber-400">
+                Grand Total ({filteredItems.length} Records):
+              </td>
+              <td className="py-3 px-2 text-right font-mono font-black text-amber-300 text-xs">
+                {filteredItems.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0).toLocaleString()}
+              </td>
+              <td className="py-3 px-2 text-right font-mono font-black text-emerald-400 text-xs">
+                {filteredItems.reduce((acc, i) => acc + (Number(i.receive_qty) || 0), 0).toLocaleString()}
+              </td>
+              <td className="py-3 px-2"></td>
+              <td className="py-3 px-2"></td>
+              <td className="py-3 px-2 text-right font-mono font-black text-blue-400 text-xs">
+                {filteredItems.reduce((acc, i) => acc + (Number(i.issue_qty) || 0), 0).toLocaleString()}
+              </td>
+              <td className="py-3 px-2"></td>
+              <td className="py-3 px-2"></td>
+              <td className="py-3 px-2 text-right font-mono font-black text-amber-300 text-xs">
+                {filteredItems.reduce((acc, i) => acc + (Number(i.balance_qty) || 0), 0).toLocaleString()}
+              </td>
+              <td className="py-3 px-2"></td>
+              <td className="py-3 px-2"></td>
+              <td className="py-3 px-2"></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 

@@ -1001,6 +1001,35 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                 })
               )}
             </tbody>
+            <tfoot className={`sticky bottom-0 z-30 font-black text-xs uppercase border-t-2 shadow-2xl ${
+              isLight ? 'bg-slate-900 text-white border-teal-500' : 'bg-slate-950 text-slate-100 border-teal-500'
+            }`}>
+              <tr>
+                <td colSpan={9} className="py-3 px-3 text-right font-black tracking-wider text-amber-400">
+                  Grand Total ({filteredItems.length} Records):
+                </td>
+                <td className="py-3 px-2 text-right font-mono font-black text-amber-300 text-xs">
+                  {filteredItems.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2 text-right font-mono font-black text-emerald-400 text-xs">
+                  {filteredItems.reduce((acc, i) => acc + (Number(i.rcv_qty ?? i.receive_qty) || 0), 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2 text-right font-mono font-black text-rose-300 text-xs">
+                  {filteredItems.reduce((acc, i) => {
+                    const bQty = Number(i.booking_qty) || 0;
+                    const rQty = Number(i.rcv_qty ?? i.receive_qty) || 0;
+                    const dQty = Number(i.due_qty ?? i.balance_qty) || Math.max(0, bQty - rQty);
+                    return acc + dQty;
+                  }, 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2 text-right font-mono font-black text-teal-300 text-xs">
+                  {filteredItems.reduce((acc, i) => acc + (Number(i.last_rcvd_qty) || 0), 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
 

@@ -723,6 +723,35 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                 })
               )}
             </tbody>
+            <tfoot className={`sticky bottom-0 z-30 font-black text-xs uppercase border-t-2 shadow-2xl ${
+              theme === 'dark' ? 'bg-slate-950 text-slate-100 border-indigo-500' : 'bg-slate-900 text-white border-indigo-600'
+            }`}>
+              <tr>
+                <td colSpan={12} className="py-3 px-3 text-right font-black tracking-wider text-amber-400">
+                  Grand Total ({filteredItems.length} Items):
+                </td>
+                <td className="py-3 px-2 text-right font-mono font-black text-amber-300 text-xs">
+                  {filteredItems.reduce((acc, i) => acc + (Number(i.booking_qty) || 0), 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2 text-right font-mono font-black text-emerald-400 text-xs">
+                  {filteredItems.reduce((acc, i) => acc + (Number(i.receive_qty) || 0), 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2 text-right font-mono font-black text-blue-400 text-xs">
+                  {filteredItems.reduce((acc, i) => acc + (Number(i.issue_qty) || 0), 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2 text-right font-mono font-black text-amber-300 text-xs">
+                  {filteredItems.reduce((acc, i) => acc + (Number(i.balance_qty) || 0), 0).toLocaleString()}
+                </td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2"></td>
+                <td className="py-3 px-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

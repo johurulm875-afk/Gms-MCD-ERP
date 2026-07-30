@@ -1590,6 +1590,37 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                   );
                 })}
               </tbody>
+              <tfoot className={`sticky bottom-0 z-30 font-black text-xs uppercase border-t-2 shadow-2xl ${
+                isDark ? 'bg-slate-950 text-slate-100 border-indigo-500' : 'bg-slate-900 text-white border-indigo-600'
+              }`}>
+                <tr>
+                  <td className="py-3 px-3 text-right font-black tracking-wider text-amber-400">
+                    Grand Total ({matchingItems.length} Items):
+                  </td>
+                  <td className="py-3 px-2 text-right font-mono font-black text-amber-300 text-sm">
+                    {matchingItems.reduce((acc, item) => acc + (Number(item.booking_qty) || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-2 text-right font-mono font-black text-emerald-400 text-sm">
+                    Total Recv: {matchingItems.reduce((acc, item) => {
+                      const st = rowStates[item.id];
+                      return acc + (st ? Number(st.receive_qty || 0) : Number(item.receive_qty || item.rcvd_qty || 0));
+                    }, 0).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-2 text-right font-mono font-black text-blue-400 text-sm">
+                    Total Issue: {matchingItems.reduce((acc, item) => {
+                      const st = rowStates[item.id];
+                      return acc + (st ? Number(st.issue_qty || 0) : Number(item.issue_qty || item.iss_qty || 0));
+                    }, 0).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-2 text-right font-mono font-black text-amber-300 text-sm">
+                    {matchingItems.reduce((acc, item) => {
+                      const st = rowStates[item.id];
+                      return acc + (st ? Number(st.balance_qty || 0) : Number(item.balance_qty || 0));
+                    }, 0).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-2"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
