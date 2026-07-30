@@ -309,20 +309,21 @@ export function generateCompanyMultiSheetExcel<T>(options: CompanyExcelExportOpt
   const buyerMap: Record<string, T[]> = {};
   data.forEach(item => {
     const rawBuyer = getBuyerName(item);
-    const bName = (rawBuyer || 'General Buyer').trim();
-    if (!buyerMap[bName]) {
-      buyerMap[bName] = [];
+    const cleanBuyer = (rawBuyer || 'General Buyer').trim().replace(/\s+/g, ' ');
+    const bNameKey = cleanBuyer.toUpperCase();
+    if (!buyerMap[bNameKey]) {
+      buyerMap[bNameKey] = [];
     }
-    buyerMap[bName].push(item);
+    buyerMap[bNameKey].push(item);
   });
 
-  Object.keys(buyerMap).forEach(bName => {
-    const buyerItems = buyerMap[bName];
-    const wsBuyer = createProfessionalWorksheet(buyerItems, columns, `${updateTitleHeader} (${bName.toUpperCase()})`, options);
+  Object.keys(buyerMap).forEach(bNameKey => {
+    const buyerItems = buyerMap[bNameKey];
+    const wsBuyer = createProfessionalWorksheet(buyerItems, columns, `${updateTitleHeader} (${bNameKey})`, options);
 
     // Clean sheet name (Excel 31 char limit, no invalid chars : \ / ? * [ ])
-    let safeName = bName.replace(/[:\\/?*\[\]]/g, '').trim().slice(0, 30);
-    if (!safeName) safeName = 'Buyer';
+    let safeName = bNameKey.replace(/[:\\/?*\[\]]/g, '').trim().slice(0, 30);
+    if (!safeName) safeName = 'BUYER';
 
     let finalSheetName = safeName;
     let counter = 1;

@@ -583,7 +583,13 @@ export default function App() {
 
   const fetchDrawstringInventory = async () => {
     try {
-      const records = await fetchAllRowsFromSupabase<any>('drawstring');
+      const records = await fetchAllRowsFromSupabase<any>('drawstring').catch(() => []);
+      let localItems: DrawstringItem[] = [];
+      try {
+        const saved = localStorage.getItem('drawstring_items');
+        if (saved) localItems = JSON.parse(saved);
+      } catch (e) {}
+
       if (records && records.length > 0) {
         const mappedRecords: DrawstringItem[] = records.map((r: any, idx: number) => {
           const bName = r.buyer_name || r.buyer || r['Buyer'] || '';
@@ -600,6 +606,7 @@ export default function App() {
             ...r,
             id: Number(r.id || r.sl_no || idx + 1),
             buyer_name: bName,
+            buyer: bName,
             date: r.date || r.booking_date || '',
             booking_challan: r.booking_challan || r.ref_no_job_no || '',
             style: r.style || r.ref_no_job_no || '',
@@ -624,16 +631,26 @@ export default function App() {
           };
         });
 
-        setDrawstringItems(mappedRecords);
-        localStorage.setItem('drawstring_items', JSON.stringify(mappedRecords));
-      } else {
-        setDrawstringItems([]);
-        localStorage.removeItem('drawstring_items');
+        // Merge local new bookings that might not be in Supabase yet
+        const existingKeys = new Set(mappedRecords.map(item => `${(item.buyer_name || '').toLowerCase()}_${(item.style || '').toLowerCase()}_${(item.colour || '').toLowerCase()}_${(item.store_ref || '').toLowerCase()}_${item.booking_qty}`));
+        
+        const extraLocal = localItems.filter(l => {
+          const k = `${(l.buyer_name || '').toLowerCase()}_${(l.style || '').toLowerCase()}_${(l.colour || '').toLowerCase()}_${(l.store_ref || '').toLowerCase()}_${l.booking_qty}`;
+          return !existingKeys.has(k);
+        });
+
+        const finalMerged = [...extraLocal, ...mappedRecords].map((item, index) => ({
+          ...item,
+          id: index + 1
+        }));
+
+        setDrawstringItems(finalMerged);
+        localStorage.setItem('drawstring_items', JSON.stringify(finalMerged));
+      } else if (localItems.length > 0) {
+        setDrawstringItems(localItems);
       }
     } catch (err) {
       console.warn("Drawstring connection notice:", err);
-      setDrawstringItems([]);
-      localStorage.removeItem('drawstring_items');
     }
   };
 
@@ -642,9 +659,15 @@ export default function App() {
     setDbErrorMessage(null);
 
     try {
-      const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape');
+      const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape').catch(() => []);
+      let localItems: TwillTapeItem[] = [];
+      try {
+        const saved = localStorage.getItem('twill_tape_items');
+        if (saved) localItems = JSON.parse(saved);
+      } catch (e) {}
+
       if (records && records.length > 0) {
-        const mappedRecords: TwillTapeItem[] = records.map((r: any) => {
+        const mappedRecords: TwillTapeItem[] = records.map((r: any, idx: number) => {
           const bName = r.buyer_name || r.buyer || r['Buyer'] || '';
           const stRef = r.store_ref || r.twill_ref || r.s_tape_ref || r.tape_ref || '';
           const col = r.colour || r.color || '';
@@ -660,7 +683,7 @@ export default function App() {
 
           return {
             ...r,
-            id: Number(r.id),
+            id: Number(r.id || idx + 1),
             buyer_name: bName,
             buyer: bName,
             date: r.date || '',
@@ -689,18 +712,29 @@ export default function App() {
           };
         });
 
-        setItems(mappedRecords);
-        localStorage.setItem('twill_tape_items', JSON.stringify(mappedRecords));
+        const existingKeys = new Set(mappedRecords.map(item => `${(item.buyer_name || '').toLowerCase()}_${(item.style || '').toLowerCase()}_${(item.colour || '').toLowerCase()}_${(item.store_ref || '').toLowerCase()}_${item.booking_qty}`));
+        
+        const extraLocal = localItems.filter(l => {
+          const k = `${(l.buyer_name || '').toLowerCase()}_${(l.style || '').toLowerCase()}_${(l.colour || '').toLowerCase()}_${(l.store_ref || '').toLowerCase()}_${l.booking_qty}`;
+          return !existingKeys.has(k);
+        });
+
+        const finalMerged = [...extraLocal, ...mappedRecords].map((item, index) => ({
+          ...item,
+          id: index + 1
+        }));
+
+        setItems(finalMerged);
+        localStorage.setItem('twill_tape_items', JSON.stringify(finalMerged));
+        setIsConnected(true);
+      } else if (localItems.length > 0) {
+        setItems(localItems);
         setIsConnected(true);
       } else {
-        setItems([]);
-        localStorage.removeItem('twill_tape_items');
         setIsConnected(true);
       }
     } catch (err: any) {
       console.warn("Supabase connection notice:", err?.message || err);
-      setItems([]);
-      localStorage.removeItem('twill_tape_items');
       setIsConnected(true);
     } finally {
       setIsLoading(false);
@@ -716,16 +750,22 @@ export default function App() {
     setIsSewingLoading(true);
 
     try {
-      const records1 = await fetchAllRowsFromSupabase<any>('sewing_thread').catch(() => []);
-      const records2 = await fetchAllRowsFromSupabase<any>('supabase_sewing_thread_all_rows').catch(() => []);
+      const records1 = await fetchAllRowsFromSupabase<any>('sewing_thread').then(res => res.map(r => ({ ...r, _tableSource: 'st1' }))).catch(() => []);
+      const records2 = await fetchAllRowsFromSupabase<any>('supabase_sewing_thread_all_rows').then(res => res.map(r => ({ ...r, _tableSource: 'st2' }))).catch(() => []);
 
       const combinedRaw = [...records1, ...records2];
 
+      let localItems: SewingThreadItem[] = [];
+      try {
+        const saved = localStorage.getItem('sewing_thread_items');
+        if (saved) localItems = JSON.parse(saved);
+      } catch (e) {}
+
       if (combinedRaw.length > 0) {
-        // Deduplicate records by ID or composite key
+        // Tag-based unique map preserving items from both tables
         const uniqueMap = new Map<string, any>();
         combinedRaw.forEach((r, idx) => {
-          const key = r.id !== undefined && r.id !== null ? `id_${r.id}` : `idx_${idx}_${r['Style'] || r.style || ''}_${r['COLOUR'] || r.colour || r.color || ''}`;
+          const key = `${r._tableSource || 'tbl'}_id_${r.id !== undefined && r.id !== null ? r.id : idx}`;
           if (!uniqueMap.has(key)) {
             uniqueMap.set(key, r);
           }
@@ -816,16 +856,26 @@ export default function App() {
           };
         });
 
-        setSewingThreadItems(mappedRecords);
-        localStorage.setItem('sewing_thread_items', JSON.stringify(mappedRecords));
-      } else {
-        setSewingThreadItems([]);
-        localStorage.removeItem('sewing_thread_items');
+        // Merge local extra new bookings that might not be in Supabase yet
+        const existingKeys = new Set(mappedRecords.map(item => `${(item.buyer_name || '').toLowerCase()}_${(item.style || '').toLowerCase()}_${(item.colour || '').toLowerCase()}_${(item.store_ref || '').toLowerCase()}_${item.booking_qty}`));
+        
+        const extraLocal = localItems.filter(l => {
+          const k = `${(l.buyer_name || '').toLowerCase()}_${(l.style || '').toLowerCase()}_${(l.colour || '').toLowerCase()}_${(l.store_ref || '').toLowerCase()}_${l.booking_qty}`;
+          return !existingKeys.has(k);
+        });
+
+        const finalMerged = [...extraLocal, ...mappedRecords].map((item, index) => ({
+          ...item,
+          id: index + 1
+        }));
+
+        setSewingThreadItems(finalMerged);
+        localStorage.setItem('sewing_thread_items', JSON.stringify(finalMerged));
+      } else if (localItems.length > 0) {
+        setSewingThreadItems(localItems);
       }
     } catch (err) {
       console.warn("Sewing thread connection notice:", err);
-      setSewingThreadItems([]);
-      localStorage.removeItem('sewing_thread_items');
     } finally {
       setIsSewingLoading(false);
     }
