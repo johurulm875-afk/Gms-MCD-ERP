@@ -377,14 +377,36 @@ export default function App() {
     let keepFetching = true;
 
     while (keepFetching) {
-      const { data, error } = await withTimeout(
-        supabase
-          .from(tableName)
-          .select('*')
-          .order('id', { ascending: false })
-          .range(start, start + chunkSize - 1),
-        2500
-      );
+      let data: any[] | null = null;
+      let error: any = null;
+
+      try {
+        const res = await withTimeout(
+          supabase
+            .from(tableName)
+            .select('*')
+            .order('id', { ascending: false })
+            .range(start, start + chunkSize - 1),
+          5000
+        );
+        data = res.data;
+        error = res.error;
+      } catch (err1) {
+        // Fallback: try without ordering by 'id' in case table lacks an 'id' column
+        try {
+          const res = await withTimeout(
+            supabase
+              .from(tableName)
+              .select('*')
+              .range(start, start + chunkSize - 1),
+            5000
+          );
+          data = res.data;
+          error = res.error;
+        } catch (err2) {
+          error = err2;
+        }
+      }
 
       if (error) {
         throw error;
@@ -690,16 +712,69 @@ export default function App() {
     setIsSewingLoading(true);
 
     try {
-      const records = await fetchAllRowsFromSupabase<SewingThreadItem>('sewing_thread');
-      if (records && records.length > 0) {
-        const mappedRecords = records.map(r => ({
-          ...r,
-          buyer_name: r.buyer_name || r.buyer || 'GMS Buyer',
-          store_ref: r.store_ref || r.s_thread_ref || `TH-${r.id}`,
-          thread_count: r.thread_count || r.count || '',
-          receive_date: r.receive_date || r.rcvd_date || '',
-          receive_challan: r.receive_challan || r.rcvd_challan || ''
-        }));
+      const records1 = await fetchAllRowsFromSupabase<any>('sewing_thread').catch(() => []);
+      const records2 = await fetchAllRowsFromSupabase<any>('supabase_sewing_thread_all_rows').catch(() => []);
+
+      const combinedRaw = [...records1, ...records2];
+
+      if (combinedRaw.length > 0) {
+        // Deduplicate records by ID or composite key
+        const uniqueMap = new Map<string, any>();
+        combinedRaw.forEach((r, idx) => {
+          const key = r.id ? `id_${r.id}` : `ref_${r.store_ref || r.s_thread_ref || r.sr_gt_no || r.sr_gt}_${r.style}_${r.colour || r.color}_${idx}`;
+          if (!uniqueMap.has(key)) {
+            uniqueMap.set(key, r);
+          }
+        });
+
+        const records = Array.from(uniqueMap.values());
+        const mappedRecords: SewingThreadItem[] = records.map((r: any, idx: number) => {
+          const bName = r.buyer_name || r.buyer || 'GMS Buyer';
+          const stRef = r.store_ref || r.s_thread_ref || r.sr_gt_no || r.sr_gt || r['sr/gt'] || `TH-${r.id || r.sl_no || idx + 1}`;
+          const bQty = Number(r.booking_qty ?? r.booking_quantity ?? r.qty ?? 0);
+          const rQty = Number(r.receive_qty ?? r.rcvd_qty ?? r.rcv_qty ?? r.rec_qty ?? r.received_qty ?? 0);
+          const iQty = Number(r.issue_qty ?? r.iss_qty ?? r.issued_qty ?? 0);
+          const balQty = r.balance_qty !== undefined && r.balance_qty !== null ? Number(r.balance_qty) : (r.due_qty !== undefined && r.due_qty !== null ? Number(r.due_qty) : (r.bal_qty !== undefined && r.bal_qty !== null ? Number(r.bal_qty) : Math.max(0, bQty - rQty)));
+
+          return {
+            ...r,
+            id: Number(r.id || r.sl_no || idx + 1),
+            buyer_name: bName,
+            buyer: bName,
+            date: r.date || r.booking_date || r.date_created || r.created_at || '',
+            booking_challan: r.booking_challan || r.ref_no_job_no || r.ref_no || r.challan || '',
+            style: r.style || r.style_no || '',
+            order_no: r.order_no || r.po_no || r.po || '',
+            store_ref: stRef,
+            s_thread_ref: stRef,
+            job_no: r.job_no || r.job || '',
+            colour: r.colour || r.color || r.shade_name || '',
+            color: r.colour || r.color || r.shade_name || '',
+            item_name: r.item_name || r.item || 'Spun Polyester Thread',
+            thread_count: r.thread_count || r.count || '',
+            count: r.thread_count || r.count || '',
+            shade_no: r.shade_no || r.pantone || r.shade || '',
+            pantone: r.shade_no || r.pantone || r.shade || '',
+            meter: r.meter || r.length || r.cone_meter || r.con_meter || '',
+            per_body_consm: r.per_body_consm || r.consm || r.consumption || '',
+            supplier: r.supplier || r.supplier_name || '',
+            booking_qty: bQty,
+            receive_qty: rQty,
+            rcvd_qty: rQty,
+            receive_date: r.receive_date || r.rcvd_date || r.rec_date || '',
+            rcvd_date: r.receive_date || r.rcvd_date || r.rec_date || '',
+            receive_challan: r.receive_challan || r.rcvd_challan || r.rec_challan || '',
+            rcvd_challan: r.receive_challan || r.rcvd_challan || r.rec_challan || '',
+            issue_qty: iQty,
+            iss_qty: iQty,
+            issue_date: r.issue_date || r.iss_date || '',
+            issue_challan: r.issue_challan || r.iss_challan || '',
+            balance_qty: balQty,
+            remarks: r.remarks || r.note || r.comments || '',
+            receive_logs: Array.isArray(r.receive_logs) ? r.receive_logs : [],
+            issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
+          };
+        });
 
         setSewingThreadItems(mappedRecords);
         localStorage.setItem('sewing_thread_items', JSON.stringify(mappedRecords));
