@@ -266,8 +266,24 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
 
     if (rowsWithChanges.length === 0) return;
 
-    // Check validation (issue_qty <= receive_qty)
-    const hasInvalid = rowsWithChanges.some(r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0));
+    // Check validation (issue_qty <= receive_qty and challans provided)
+    const hasInvalid = rowsWithChanges.some(r => {
+      const addedRecv = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+      const addedIss = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+
+      const recvMissing = (addedRecv > 0 || (r.receive_sub_batches && r.receive_sub_batches.some(sb => (Number(sb.qty) || 0) > 0))) &&
+        !r.receive_challan?.trim() &&
+        (!r.receive_sub_batches || r.receive_sub_batches.length === 0 || r.receive_sub_batches.some(sb => (Number(sb.qty) || 0) > 0 && !sb.challan?.trim()));
+
+      const issMissing = (addedIss > 0 || (r.issue_sub_batches && r.issue_sub_batches.some(sb => (Number(sb.qty) || 0) > 0))) &&
+        !r.issue_challan?.trim() &&
+        (!r.issue_sub_batches || r.issue_sub_batches.length === 0 || r.issue_sub_batches.some(sb => (Number(sb.qty) || 0) > 0 && !sb.challan?.trim()));
+
+      const issueExceeded = Number(r.issue_qty || 0) > Number(r.receive_qty || 0);
+
+      return recvMissing || issMissing || issueExceeded;
+    });
+
     if (hasInvalid) return;
 
     const timer = setTimeout(async () => {
@@ -393,6 +409,37 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
 
     return () => clearTimeout(timer);
   }, [rowStates, autoSaveEnabled, isSaving, globalWorkingDate, onSaveQuickUpdates]);
+
+  // Excel-style Enter key navigation to move focus down to the next row
+  const handleKeyDownNavigation = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+    rowIndex: number,
+    fieldCol: string
+  ) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      let targetRowIndex = rowIndex;
+      if (e.key === 'Enter') {
+        targetRowIndex = e.shiftKey ? rowIndex - 1 : rowIndex + 1;
+      } else if (e.key === 'ArrowDown') {
+        targetRowIndex = rowIndex + 1;
+      } else if (e.key === 'ArrowUp') {
+        targetRowIndex = rowIndex - 1;
+      }
+
+      if (targetRowIndex !== rowIndex) {
+        const targetInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+          `[data-row-idx="${targetRowIndex}"][data-col="${fieldCol}"]`
+        );
+        if (targetInput) {
+          e.preventDefault();
+          targetInput.focus();
+          if (typeof targetInput.select === 'function') {
+            targetInput.select();
+          }
+        }
+      }
+    }
+  };
 
   // Helper to recalculate row total receive/issue & balance
   const recalculateRow = (state: ItemRowState): ItemRowState => {
@@ -631,24 +678,67 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation: Issue Qty cannot exceed Receive Qty
-    const invalidRow = (Object.values(rowStates) as ItemRowState[]).find(
+    const allRowStates = Object.values(rowStates) as ItemRowState[];
+
+    // 1. Filter rows with changes or entries
+    const changedRows = allRowStates.filter(r => {
+      const addedRecv = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+      const addedIss = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+      const hasRecvBatch = r.receive_sub_batches && r.receive_sub_batches.some(b => typeof b.qty === 'number' && b.qty > 0);
+      const hasIssBatch = r.issue_sub_batches && r.issue_sub_batches.some(b => typeof b.qty === 'number' && b.qty > 0);
+      const origItem = allItems.find(i => i.id === r.id);
+      const remarksChanged = (r.remarks || '') !== (origItem?.remarks || '');
+      return addedRecv > 0 || addedIss > 0 || hasRecvBatch || hasIssBatch || remarksChanged;
+    });
+
+    if (changedRows.length === 0) {
+      alert("⚠️ No changes or quantities entered! Please enter Receive or Issue Qty.");
+      return;
+    }
+
+    // 2. Validation: Issue Qty cannot exceed Receive Qty
+    const invalidExceeded = changedRows.find(
       r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0)
     );
 
-    if (invalidRow) {
-      const matchedItem = allItems.find(i => i.id === invalidRow.id);
-      const maxAvailable = Number(invalidRow.receive_qty || 0);
-      const attemptedIssue = Number(invalidRow.issue_qty || 0);
+    if (invalidExceeded) {
+      const matchedItem = allItems.find(i => i.id === invalidExceeded.id);
+      const maxAvailable = Number(invalidExceeded.receive_qty || 0);
+      const attemptedIssue = Number(invalidExceeded.issue_qty || 0);
       const styleStr = matchedItem?.style ? ` for style ${matchedItem.style}` : '';
       const colStr = matchedItem?.colour ? ` (${matchedItem.colour})` : '';
       alert(
-        `❌ Issue Qty (${attemptedIssue}) cannot exceed Received Qty (${maxAvailable})${styleStr}${colStr}!\n\n(ইস্যু পরিমাণ রিসিভ পরিমাণের (165) চেয়ে বেশি দেওয়া যাবে না)`
+        `❌ Issue Qty (${attemptedIssue}) cannot exceed Received Qty (${maxAvailable})${styleStr}${colStr}!\n\n(রিসিভ পরিমাণের চেয়ে বেশি ইস্যু দেওয়া যাবে না। লাল চিহ্নিত ঘর সংশোধন করুন।)`
       );
       return;
     }
 
-    const updatesToSave: QuickUpdatePayload[] = (Object.values(rowStates) as ItemRowState[]).map(r => {
+    // 3. Validation: Challan Number is compulsory for Receive or Issue entry
+    const missingChallan = changedRows.find(r => {
+      const addedRecv = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+      const addedIss = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+
+      const recvMissing = (addedRecv > 0 || (r.receive_sub_batches && r.receive_sub_batches.some(sb => (Number(sb.qty) || 0) > 0))) &&
+        !r.receive_challan?.trim() &&
+        (!r.receive_sub_batches || r.receive_sub_batches.length === 0 || r.receive_sub_batches.some(sb => (Number(sb.qty) || 0) > 0 && !sb.challan?.trim()));
+
+      const issMissing = (addedIss > 0 || (r.issue_sub_batches && r.issue_sub_batches.some(sb => (Number(sb.qty) || 0) > 0))) &&
+        !r.issue_challan?.trim() &&
+        (!r.issue_sub_batches || r.issue_sub_batches.length === 0 || r.issue_sub_batches.some(sb => (Number(sb.qty) || 0) > 0 && !sb.challan?.trim()));
+
+      return recvMissing || issMissing;
+    });
+
+    if (missingChallan) {
+      const matchedItem = allItems.find(i => i.id === missingChallan.id);
+      const styleStr = matchedItem?.style ? ` for style ${matchedItem.style}` : '';
+      alert(
+        `❌ Challan Number Required!\n\n(চালান নম্বর ছাড়া রিসিভ বা ইস্যু সেভ করা যাবে না। যে রো ফাকা থাকবে তা লাল রঙ হয়ে যাবে, দয়া করে চালান নম্বর দিন।)${styleStr}`
+      );
+      return;
+    }
+
+    const updatesToSave: QuickUpdatePayload[] = changedRows.map(r => {
       const addedRecvTotal = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
       const addedIssTotal = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
 
@@ -1230,7 +1320,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
               </thead>
 
               <tbody className="font-medium">
-                {matchingItems.map((item) => {
+                {matchingItems.map((item, rIdx) => {
                   const state = rowStates[item.id] || {
                     id: item.id,
                     prev_receive_qty: item.receive_qty || 0,
@@ -1307,133 +1397,170 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                       </td>
 
                       {/* 4. RECEIVE CELL (Challan + Batch + Multi-batch (+) support) */}
-                      <td className={`py-2 px-3 align-top border ${
-                        isDark ? 'bg-emerald-950/20 border-slate-800' : 'bg-emerald-50/40 border-slate-300'
-                      }`}>
-                        <div className="space-y-1.5">
-                          {/* Row Top: Prev Recv & Today Recv */}
-                          <div className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="text-slate-500 font-medium">
-                              Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_receive_qty}</strong>
-                            </span>
+                      {(() => {
+                        const addedRecv = typeof state.today_receive_qty === 'number' ? state.today_receive_qty : 0;
+                        const isRecvChallanMissing = (addedRecv > 0 || (state.receive_sub_batches && state.receive_sub_batches.some(sb => (Number(sb.qty) || 0) > 0))) &&
+                          !state.receive_challan?.trim() &&
+                          (!state.receive_sub_batches || state.receive_sub_batches.length === 0 || state.receive_sub_batches.some(sb => (Number(sb.qty) || 0) > 0 && !sb.challan?.trim()));
 
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">+ Today Recv:</span>
-                              <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                value={state.today_receive_qty}
-                                onChange={(e) => handleTodayReceiveChange(item.id, e.target.value)}
-                                placeholder="0"
-                                className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-                                  isDark ? 'bg-slate-950 border-emerald-600 text-emerald-300' : 'bg-white border-emerald-400 text-emerald-900'
-                                }`}
-                              />
-                            </div>
-                          </div>
+                        return (
+                          <td className={`py-2 px-3 align-top border ${
+                            isRecvChallanMissing
+                              ? 'bg-red-50 dark:bg-red-950/70 border-red-400 dark:border-red-800'
+                              : (isDark ? 'bg-emerald-950/20 border-slate-800' : 'bg-emerald-50/40 border-slate-300')
+                          }`}>
+                            <div className="space-y-1.5">
+                              {/* Row Top: Prev Recv & Today Recv */}
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-slate-500 font-medium">
+                                  Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_receive_qty}</strong>
+                                </span>
 
-                          {/* Inputs: Challan No & Batch No */}
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <div>
-                              <label className="block text-[9px] font-bold uppercase text-slate-500">Challan No</label>
-                              <input
-                                type="text"
-                                value={state.receive_challan}
-                                onChange={(e) => handleFieldChange(item.id, 'receive_challan', e.target.value)}
-                                placeholder="Challan #"
-                                className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-                                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                                }`}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[9px] font-bold uppercase text-slate-500">Batch / Roll No</label>
-                              <input
-                                type="text"
-                                value={state.receive_batch_no}
-                                onChange={(e) => handleFieldChange(item.id, 'receive_batch_no', e.target.value)}
-                                placeholder="Batch #"
-                                className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-                                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                                }`}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Multi-Batch (+) Button */}
-                          <div className="flex items-center justify-between pt-1">
-                            <button
-                              type="button"
-                              onClick={() => handleAddReceiveSubBatch(item.id)}
-                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs transition-all"
-                              title="Click (+) to enter multiple sub-batches (e.g. 500 + 700 + 1200)"
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>Sub-Batch breakdown (+)</span>
-                            </button>
-
-                            <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-bold">
-                              Total: {state.receive_qty} {item.yds}
-                            </span>
-                          </div>
-
-                          {/* Render Sub-Batches List if created */}
-                          {state.receive_sub_batches && state.receive_sub_batches.length > 0 && (
-                            <div className="space-y-1 p-2 rounded bg-emerald-100/60 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[10px]">
-                              <div className="font-bold text-emerald-900 dark:text-emerald-200">
-                                Receive Sub-Batches ({state.receive_sub_batches.length}):
-                              </div>
-                              {state.receive_sub_batches.map((sb, sbIdx) => (
-                                <div key={sb.id} className="flex items-center gap-1">
-                                  <span className="font-bold text-slate-500">#{sbIdx + 1}</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">+ Today Recv:</span>
                                   <input
                                     type="number"
                                     step="any"
-                                    value={sb.qty}
-                                    onChange={(e) => handleUpdateReceiveSubBatch(item.id, sb.id, 'qty', e.target.value)}
-                                    placeholder="Qty"
-                                    className="w-16 px-1.5 py-0.5 font-mono font-bold text-xs bg-white dark:bg-slate-900 border border-emerald-400 rounded"
+                                    min="0"
+                                    data-row-idx={rIdx}
+                                    data-col="today_receive_qty"
+                                    value={state.today_receive_qty}
+                                    onChange={(e) => handleTodayReceiveChange(item.id, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'today_receive_qty')}
+                                    placeholder="0"
+                                    className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+                                      isDark ? 'bg-slate-950 border-emerald-600 text-emerald-300' : 'bg-white border-emerald-400 text-emerald-900'
+                                    }`}
                                   />
-                                  <input
-                                    type="text"
-                                    value={sb.challan}
-                                    onChange={(e) => handleUpdateReceiveSubBatch(item.id, sb.id, 'challan', e.target.value)}
-                                    placeholder="Challan #"
-                                    className="w-20 px-1.5 py-0.5 font-mono text-xs bg-white dark:bg-slate-900 border border-emerald-400 rounded"
-                                  />
-                                  <input
-                                    type="text"
-                                    value={sb.batch_no}
-                                    onChange={(e) => handleUpdateReceiveSubBatch(item.id, sb.id, 'batch_no', e.target.value)}
-                                    placeholder="Batch #"
-                                    className="w-20 px-1.5 py-0.5 font-mono text-xs bg-white dark:bg-slate-900 border border-emerald-400 rounded"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveReceiveSubBatch(item.id, sb.id)}
-                                    className="p-1 text-red-600 hover:text-red-800"
-                                    title="Delete this sub-batch"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                              </div>
 
-                        </div>
-                      </td>
+                              {/* Inputs: Challan No & Batch No */}
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className="block text-[9px] font-bold uppercase text-slate-500">Challan No</label>
+                                    {isRecvChallanMissing && (
+                                      <span className="text-[9px] font-bold text-red-600 dark:text-red-400">⚠️ Required</span>
+                                    )}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    data-row-idx={rIdx}
+                                    data-col="receive_challan"
+                                    value={state.receive_challan}
+                                    onChange={(e) => handleFieldChange(item.id, 'receive_challan', e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'receive_challan')}
+                                    placeholder="Challan #"
+                                    className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none transition-all ${
+                                      isRecvChallanMissing
+                                        ? 'bg-red-100 dark:bg-red-950/90 border-red-500 text-red-900 dark:text-red-100 font-bold focus:ring-2 focus:ring-red-500 ring-2 ring-red-400 placeholder:text-red-400 animate-pulse'
+                                        : (isDark ? 'bg-slate-950 border-slate-700 text-slate-100 focus:ring-emerald-500' : 'bg-white border-slate-300 text-slate-900 focus:ring-emerald-500')
+                                    }`}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500">Batch / Roll No</label>
+                                  <input
+                                    type="text"
+                                    data-row-idx={rIdx}
+                                    data-col="receive_batch_no"
+                                    value={state.receive_batch_no}
+                                    onChange={(e) => handleFieldChange(item.id, 'receive_batch_no', e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'receive_batch_no')}
+                                    placeholder="Batch #"
+                                    className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+                                      isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Multi-Batch (+) Button */}
+                              <div className="flex items-center justify-between pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddReceiveSubBatch(item.id)}
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-2xs transition-all"
+                                  title="Click (+) to enter multiple sub-batches (e.g. 500 + 700 + 1200)"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Sub-Batch breakdown (+)</span>
+                                </button>
+
+                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-bold">
+                                  Total: {state.receive_qty} {item.yds}
+                                </span>
+                              </div>
+
+                              {/* Render Sub-Batches List if created */}
+                              {state.receive_sub_batches && state.receive_sub_batches.length > 0 && (
+                                <div className="space-y-1 p-2 rounded bg-emerald-100/60 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[10px]">
+                                  <div className="font-bold text-emerald-900 dark:text-emerald-200">
+                                    Receive Sub-Batches ({state.receive_sub_batches.length}):
+                                  </div>
+                                  {state.receive_sub_batches.map((sb, sbIdx) => (
+                                    <div key={sb.id} className="flex items-center gap-1">
+                                      <span className="font-bold text-slate-500">#{sbIdx + 1}</span>
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        value={sb.qty}
+                                        onChange={(e) => handleUpdateReceiveSubBatch(item.id, sb.id, 'qty', e.target.value)}
+                                        placeholder="Qty"
+                                        className="w-16 px-1.5 py-0.5 font-mono font-bold text-xs bg-white dark:bg-slate-900 border border-emerald-400 rounded"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={sb.challan}
+                                        onChange={(e) => handleUpdateReceiveSubBatch(item.id, sb.id, 'challan', e.target.value)}
+                                        placeholder="Challan #"
+                                        className={`w-20 px-1.5 py-0.5 font-mono text-xs bg-white dark:bg-slate-900 border rounded ${
+                                          (Number(sb.qty) || 0) > 0 && !sb.challan?.trim() ? 'border-red-500 bg-red-100 font-bold ring-1 ring-red-400' : 'border-emerald-400'
+                                        }`}
+                                      />
+                                      <input
+                                        type="text"
+                                        value={sb.batch_no}
+                                        onChange={(e) => handleUpdateReceiveSubBatch(item.id, sb.id, 'batch_no', e.target.value)}
+                                        placeholder="Batch #"
+                                        className="w-20 px-1.5 py-0.5 font-mono text-xs bg-white dark:bg-slate-900 border border-emerald-400 rounded"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveReceiveSubBatch(item.id, sb.id)}
+                                        className="p-1 text-red-600 hover:text-red-800"
+                                        title="Delete this sub-batch"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                            </div>
+                          </td>
+                        );
+                      })()}
 
                       {/* 5. ISSUE CELL (Challan + Batch + Multi-batch (+) support) */}
-                      <td className={`py-2 px-3 align-top border ${
-                        isDark ? 'bg-blue-950/20 border-slate-800' : 'bg-blue-50/40 border-slate-300'
-                      }`}>
-                        <div className="space-y-1.5">
-                          {/* Row Top: Prev Issue & Today Issue */}
-                          {(() => {
-                            const isIssueExceeded = Number(state.issue_qty || 0) > Number(state.receive_qty || 0);
-                            return (
+                      {(() => {
+                        const addedIss = typeof state.today_issue_qty === 'number' ? state.today_issue_qty : 0;
+                        const isIssChallanMissing = (addedIss > 0 || (state.issue_sub_batches && state.issue_sub_batches.some(sb => (Number(sb.qty) || 0) > 0))) &&
+                          !state.issue_challan?.trim() &&
+                          (!state.issue_sub_batches || state.issue_sub_batches.length === 0 || state.issue_sub_batches.some(sb => (Number(sb.qty) || 0) > 0 && !sb.challan?.trim()));
+                        const isIssueExceeded = Number(state.issue_qty || 0) > Number(state.receive_qty || 0);
+                        const hasIssueError = isIssChallanMissing || isIssueExceeded;
+
+                        return (
+                          <td className={`py-2 px-3 align-top border ${
+                            hasIssueError
+                              ? 'bg-red-50 dark:bg-red-950/70 border-red-400 dark:border-red-800'
+                              : (isDark ? 'bg-blue-950/20 border-slate-800' : 'bg-blue-50/40 border-slate-300')
+                          }`}>
+                            <div className="space-y-1.5">
+                              {/* Row Top: Prev Issue & Today Issue */}
                               <div className="flex items-center justify-between gap-2 text-[11px]">
                                 <span className="text-slate-500 font-medium">
                                   Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_issue_qty}</strong>
@@ -1445,47 +1572,61 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                                     type="number"
                                     step="any"
                                     min="0"
+                                    data-row-idx={rIdx}
+                                    data-col="today_issue_qty"
                                     value={state.today_issue_qty}
                                     onChange={(e) => handleTodayIssueChange(item.id, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'today_issue_qty')}
                                     placeholder="0"
                                     className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 ${
                                       isIssueExceeded
-                                        ? 'bg-red-100 border-red-500 text-red-900 focus:ring-red-500 ring-2 ring-red-400'
+                                        ? 'bg-red-100 border-red-500 text-red-900 focus:ring-red-500 ring-2 ring-red-400 font-black'
                                         : (isDark ? 'bg-slate-950 border-blue-600 text-blue-300 focus:ring-blue-500' : 'bg-white border-blue-400 text-blue-900 focus:ring-blue-500')
                                     }`}
                                   />
                                 </div>
                               </div>
-                            );
-                          })()}
 
-                          {/* Inputs: Challan No & Batch No */}
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <div>
-                              <label className="block text-[9px] font-bold uppercase text-slate-500">Issue Challan</label>
-                              <input
-                                type="text"
-                                value={state.issue_challan}
-                                onChange={(e) => handleFieldChange(item.id, 'issue_challan', e.target.value)}
-                                placeholder="Challan #"
-                                className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                                }`}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[9px] font-bold uppercase text-slate-500">Batch / Roll No</label>
-                              <input
-                                type="text"
-                                value={state.issue_batch_no}
-                                onChange={(e) => handleFieldChange(item.id, 'issue_batch_no', e.target.value)}
-                                placeholder="Batch #"
-                                className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                                }`}
-                              />
-                            </div>
-                          </div>
+                              {/* Inputs: Challan No & Batch No */}
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className="block text-[9px] font-bold uppercase text-slate-500">Issue Challan</label>
+                                    {isIssChallanMissing && (
+                                      <span className="text-[9px] font-bold text-red-600 dark:text-red-400">⚠️ Required</span>
+                                    )}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    data-row-idx={rIdx}
+                                    data-col="issue_challan"
+                                    value={state.issue_challan}
+                                    onChange={(e) => handleFieldChange(item.id, 'issue_challan', e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'issue_challan')}
+                                    placeholder="Challan #"
+                                    className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none transition-all ${
+                                      isIssChallanMissing
+                                        ? 'bg-red-100 dark:bg-red-950/90 border-red-500 text-red-900 dark:text-red-100 font-bold focus:ring-2 focus:ring-red-500 ring-2 ring-red-400 placeholder:text-red-400 animate-pulse'
+                                        : (isDark ? 'bg-slate-950 border-slate-700 text-slate-100 focus:ring-blue-500' : 'bg-white border-slate-300 text-slate-900 focus:ring-blue-500')
+                                    }`}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500">Batch / Roll No</label>
+                                  <input
+                                    type="text"
+                                    data-row-idx={rIdx}
+                                    data-col="issue_batch_no"
+                                    value={state.issue_batch_no}
+                                    onChange={(e) => handleFieldChange(item.id, 'issue_batch_no', e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'issue_batch_no')}
+                                    placeholder="Batch #"
+                                    className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                                      isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                                    }`}
+                                  />
+                                </div>
+                              </div>
 
                           {/* Multi-Batch (+) Button */}
                           <div className="flex items-center justify-between pt-1">
@@ -1561,6 +1702,8 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
 
                         </div>
                       </td>
+                    );
+                  })()}
 
                       {/* 6. Balance Qty */}
                       <td className={`py-2.5 px-3 align-top text-right border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
@@ -1577,8 +1720,11 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                       <td className={`py-2.5 px-3 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         <input
                           type="text"
+                          data-row-idx={rIdx}
+                          data-col="remarks"
                           value={state.remarks}
                           onChange={(e) => handleFieldChange(item.id, 'remarks', e.target.value)}
+                          onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'remarks')}
                           placeholder="Remarks..."
                           className={`w-full px-2 py-1 text-xs rounded border focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
                             isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'

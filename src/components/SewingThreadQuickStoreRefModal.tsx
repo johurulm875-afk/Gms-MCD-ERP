@@ -287,6 +287,37 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
     });
   }, [searchTerm, selectedBuyer, selectedStyle, allItems, colFilters]);
 
+  // Excel-style Enter key navigation to move focus down to the next row
+  const handleKeyDownNavigation = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+    rowIndex: number,
+    fieldCol: string
+  ) => {
+    if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      let targetRowIndex = rowIndex;
+      if (e.key === 'Enter') {
+        targetRowIndex = e.shiftKey ? rowIndex - 1 : rowIndex + 1;
+      } else if (e.key === 'ArrowDown') {
+        targetRowIndex = rowIndex + 1;
+      } else if (e.key === 'ArrowUp') {
+        targetRowIndex = rowIndex - 1;
+      }
+
+      if (targetRowIndex !== rowIndex) {
+        const targetInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+          `[data-row-idx="${targetRowIndex}"][data-col="${fieldCol}"]`
+        );
+        if (targetInput) {
+          e.preventDefault();
+          targetInput.focus();
+          if (typeof targetInput.select === 'function') {
+            targetInput.select();
+          }
+        }
+      }
+    }
+  };
+
   // Debounced Auto-Save trigger
   useEffect(() => {
     if (!autoSaveEnabled || isSaving) return;
@@ -299,7 +330,15 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
 
     if (rowsWithChanges.length === 0) return;
 
-    const hasInvalid = rowsWithChanges.some(r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0));
+    const hasInvalid = rowsWithChanges.some(r => {
+      const addedRecv = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+      const addedIss = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+      const recvMissing = addedRecv > 0 && !r.receive_challan?.trim();
+      const issMissing = addedIss > 0 && !r.issue_challan?.trim();
+      const issueExceeded = Number(r.issue_qty || 0) > Number(r.receive_qty || 0);
+      return recvMissing || issMissing || issueExceeded;
+    });
+
     if (hasInvalid) return;
 
     const timer = setTimeout(async () => {
@@ -442,23 +481,58 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const invalidRow = (Object.values(rowStates) as SewingRowState[]).find(
+    const allRowStates = Object.values(rowStates) as SewingRowState[];
+
+    // 1. Filter rows that have entries/changes
+    const changedRows = allRowStates.filter(r => {
+      const addedRecv = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+      const addedIss = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+      const origItem = allItems.find(i => i.id === r.id);
+      const remarksChanged = (r.remarks || '') !== (origItem?.remarks || '');
+      return addedRecv > 0 || addedIss > 0 || remarksChanged;
+    });
+
+    if (changedRows.length === 0) {
+      alert("⚠️ No changes or quantities entered! Please enter Receive or Issue Qty.");
+      return;
+    }
+
+    // 2. Validate: Issue Qty cannot exceed Received Qty
+    const invalidExceeded = changedRows.find(
       r => Number(r.issue_qty || 0) > Number(r.receive_qty || 0)
     );
 
-    if (invalidRow) {
-      const matchedItem = allItems.find(i => i.id === invalidRow.id);
-      const maxAvailable = Number(invalidRow.receive_qty || 0);
-      const attemptedIssue = Number(invalidRow.issue_qty || 0);
+    if (invalidExceeded) {
+      const matchedItem = allItems.find(i => i.id === invalidExceeded.id);
+      const maxAvailable = Number(invalidExceeded.receive_qty || 0);
+      const attemptedIssue = Number(invalidExceeded.issue_qty || 0);
       const styleStr = matchedItem?.style ? ` for style ${matchedItem.style}` : '';
       const colStr = matchedItem?.colour || matchedItem?.color ? ` (${matchedItem?.colour || matchedItem?.color})` : '';
       alert(
-        `❌ Issue Qty (${attemptedIssue}) cannot exceed Received Qty (${maxAvailable})${styleStr}${colStr}!\n\n(ইস্যু পরিমাণ রিসিভ পরিমাণের চেয়ে বেশি দেওয়া যাবে না)`
+        `❌ Issue Qty (${attemptedIssue}) cannot exceed Received Qty (${maxAvailable})${styleStr}${colStr}!\n\n(রিসিভ পরিমাণের চেয়ে বেশি ইস্যু দেওয়া যাবে না। লাল চিহ্নিত ঘর সংশোধন করুন।)`
       );
       return;
     }
 
-    const updatesToSave: QuickUpdatePayload[] = (Object.values(rowStates) as SewingRowState[]).map(r => {
+    // 3. Validate: Challan Number is compulsory for Receive or Issue entry
+    const missingChallan = changedRows.find(r => {
+      const addedRecv = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
+      const addedIss = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
+      const recvMissing = addedRecv > 0 && !r.receive_challan?.trim();
+      const issMissing = addedIss > 0 && !r.issue_challan?.trim();
+      return recvMissing || issMissing;
+    });
+
+    if (missingChallan) {
+      const matchedItem = allItems.find(i => i.id === missingChallan.id);
+      const styleStr = matchedItem?.style ? ` for style ${matchedItem.style}` : '';
+      alert(
+        `❌ Challan Number Required!\n\n(চালান নম্বর ছাড়া রিসিভ বা ইস্যু সেভ করা যাবে না। যে রো ফাকা থাকবে তা লাল রঙ হয়ে যাবে, দয়া করে চালান নম্বর দিন।)${styleStr}`
+      );
+      return;
+    }
+
+    const updatesToSave: QuickUpdatePayload[] = changedRows.map(r => {
       const addedRecvTotal = typeof r.today_receive_qty === 'number' ? r.today_receive_qty : 0;
       const addedIssTotal = typeof r.today_issue_qty === 'number' ? r.today_issue_qty : 0;
       const effectiveDate = globalWorkingDate.trim() || getTodayFormatted();
@@ -507,6 +581,25 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
       setIsSaving(true);
       await onSaveQuickUpdates(updatesToSave);
       setSaveSuccess(true);
+
+      // Reset row inputs locally
+      setRowStates(prev => {
+        const nextState = { ...prev };
+        changedRows.forEach(r => {
+          const current = nextState[r.id];
+          if (current) {
+            nextState[r.id] = {
+              ...current,
+              prev_receive_qty: current.receive_qty,
+              today_receive_qty: '',
+              prev_issue_qty: current.issue_qty,
+              today_issue_qty: ''
+            };
+          }
+        });
+        return nextState;
+      });
+
       setTimeout(() => {
         setSaveSuccess(false);
         onClose();
@@ -1052,7 +1145,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
               </thead>
 
               <tbody className="font-medium">
-                {matchingItems.map((item) => {
+                {matchingItems.map((item, rIdx) => {
                   const state = rowStates[item.id] || {
                     id: item.id,
                     prev_receive_qty: item.receive_qty || 0,
@@ -1187,59 +1280,90 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       </td>
 
                       {/* RECEIVE CELL */}
-                      <td className={`py-2 px-2.5 align-top border ${
-                        isDark ? 'bg-emerald-950/20 border-slate-800' : 'bg-emerald-50/40 border-slate-300'
-                      }`}>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="text-slate-500 font-medium">
-                              Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_receive_qty}</strong>
-                            </span>
+                      {(() => {
+                        const addedRecv = typeof state.today_receive_qty === 'number' ? state.today_receive_qty : 0;
+                        const isRecvChallanMissing = addedRecv > 0 && !state.receive_challan?.trim();
 
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">+ Today Recv:</span>
-                              <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                value={state.today_receive_qty}
-                                onChange={(e) => handleTodayReceiveChange(item.id, e.target.value)}
-                                placeholder="0"
-                                className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-                                  isDark ? 'bg-slate-950 border-emerald-600 text-emerald-300' : 'bg-white border-emerald-400 text-emerald-900'
-                                }`}
-                              />
+                        return (
+                          <td className={`py-2 px-2.5 align-top border ${
+                            isRecvChallanMissing
+                              ? 'bg-red-50 dark:bg-red-950/70 border-red-400 dark:border-red-800'
+                              : (isDark ? 'bg-emerald-950/20 border-slate-800' : 'bg-emerald-50/40 border-slate-300')
+                          }`}>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-slate-500 font-medium">
+                                  Prev: <strong className={isDark ? 'text-slate-200' : 'text-slate-900'}>{state.prev_receive_qty}</strong>
+                                </span>
+
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">+ Today Recv:</span>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    data-row-idx={rIdx}
+                                    data-col="today_receive_qty"
+                                    value={state.today_receive_qty}
+                                    onChange={(e) => handleTodayReceiveChange(item.id, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'today_receive_qty')}
+                                    placeholder="0"
+                                    className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+                                      isDark ? 'bg-slate-950 border-emerald-600 text-emerald-300' : 'bg-white border-emerald-400 text-emerald-900'
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500">Challan No</label>
+                                  {isRecvChallanMissing && (
+                                    <span className="text-[9px] font-bold text-red-600 dark:text-red-400">⚠️ Required</span>
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  data-row-idx={rIdx}
+                                  data-col="receive_challan"
+                                  value={state.receive_challan}
+                                  onChange={(e) => handleFieldChange(item.id, 'receive_challan', e.target.value)}
+                                  onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'receive_challan')}
+                                  placeholder="Challan #"
+                                  className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none transition-all ${
+                                    isRecvChallanMissing
+                                      ? 'bg-red-100 dark:bg-red-950/90 border-red-500 text-red-900 dark:text-red-100 font-bold focus:ring-2 focus:ring-red-500 ring-2 ring-red-400 placeholder:text-red-400 animate-pulse'
+                                      : (isDark ? 'bg-slate-950 border-slate-700 text-slate-100 focus:ring-emerald-500' : 'bg-white border-slate-300 text-slate-900 focus:ring-emerald-500')
+                                  }`}
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between pt-0.5">
+                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-bold">
+                                  Total Recv: {state.receive_qty}
+                                </span>
+                                {isRecvChallanMissing && (
+                                  <span className="text-[9px] font-bold text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-950 px-1 py-0.2 rounded border border-red-300">
+                                    ❌ Missing Challan No
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold uppercase text-slate-500">Challan No</label>
-                            <input
-                              type="text"
-                              value={state.receive_challan}
-                              onChange={(e) => handleFieldChange(item.id, 'receive_challan', e.target.value)}
-                              placeholder="Challan #"
-                              className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-                                isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                              }`}
-                            />
-                          </div>
-
-                          <div className="flex items-center justify-end pt-0.5">
-                            <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300 font-bold">
-                              Total Recv: {state.receive_qty}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
+                          </td>
+                        );
+                      })()}
 
                       {/* ISSUE CELL */}
                       {(() => {
+                        const addedIss = typeof state.today_issue_qty === 'number' ? state.today_issue_qty : 0;
+                        const isIssChallanMissing = addedIss > 0 && !state.issue_challan?.trim();
                         const isIssueExceeded = Number(state.issue_qty || 0) > Number(state.receive_qty || 0);
+                        const hasIssueError = isIssChallanMissing || isIssueExceeded;
+
                         return (
                           <td className={`py-2 px-2.5 align-top border ${
-                            isIssueExceeded
-                              ? 'bg-red-50/80 dark:bg-red-950/40 border-red-300 dark:border-red-800'
+                            hasIssueError
+                              ? 'bg-red-50 dark:bg-red-950/70 border-red-400 dark:border-red-800'
                               : (isDark ? 'bg-blue-950/20 border-slate-800' : 'bg-blue-50/40 border-slate-300')
                           }`}>
                             <div className="space-y-1.5">
@@ -1254,12 +1378,15 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                                     type="number"
                                     step="any"
                                     min="0"
+                                    data-row-idx={rIdx}
+                                    data-col="today_issue_qty"
                                     value={state.today_issue_qty}
                                     onChange={(e) => handleTodayIssueChange(item.id, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'today_issue_qty')}
                                     placeholder="0"
                                     className={`w-20 px-2 py-1 font-mono font-bold text-xs rounded border focus:outline-none focus:ring-1 ${
                                       isIssueExceeded
-                                        ? 'bg-red-100 border-red-500 text-red-900 focus:ring-red-500 ring-2 ring-red-400'
+                                        ? 'bg-red-100 border-red-500 text-red-900 focus:ring-red-500 ring-2 ring-red-400 font-black'
                                         : (isDark ? 'bg-slate-950 border-blue-600 text-blue-300 focus:ring-blue-500' : 'bg-white border-blue-400 text-blue-900 focus:ring-blue-500')
                                     }`}
                                   />
@@ -1267,14 +1394,24 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                               </div>
 
                               <div>
-                                <label className="block text-[9px] font-bold uppercase text-slate-500">Issue Challan</label>
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <label className="block text-[9px] font-bold uppercase text-slate-500">Issue Challan</label>
+                                  {isIssChallanMissing && (
+                                    <span className="text-[9px] font-bold text-red-600 dark:text-red-400">⚠️ Required</span>
+                                  )}
+                                </div>
                                 <input
                                   type="text"
+                                  data-row-idx={rIdx}
+                                  data-col="issue_challan"
                                   value={state.issue_challan}
                                   onChange={(e) => handleFieldChange(item.id, 'issue_challan', e.target.value)}
+                                  onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'issue_challan')}
                                   placeholder="Challan #"
-                                  className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                                    isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                                  className={`w-full px-2 py-1 font-mono text-xs rounded border focus:outline-none transition-all ${
+                                    isIssChallanMissing
+                                      ? 'bg-red-100 dark:bg-red-950/90 border-red-500 text-red-900 dark:text-red-100 font-bold focus:ring-2 focus:ring-red-500 ring-2 ring-red-400 placeholder:text-red-400 animate-pulse'
+                                      : (isDark ? 'bg-slate-950 border-slate-700 text-slate-100 focus:ring-blue-500' : 'bg-white border-slate-300 text-slate-900 focus:ring-blue-500')
                                   }`}
                                 />
                               </div>
@@ -1288,6 +1425,11 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                                 {isIssueExceeded && (
                                   <span className="text-[10px] font-bold text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-950/90 px-1.5 py-0.5 rounded border border-red-300 mt-1">
                                     ❌ Exceeds Received Qty ({state.receive_qty})
+                                  </span>
+                                )}
+                                {isIssChallanMissing && (
+                                  <span className="text-[9px] font-bold text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-950 px-1 py-0.2 rounded border border-red-300 mt-0.5">
+                                    ❌ Missing Challan No
                                   </span>
                                 )}
                               </div>
@@ -1313,8 +1455,11 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
                       <td className={`py-2 px-2.5 align-top border ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
                         <input
                           type="text"
+                          data-row-idx={rIdx}
+                          data-col="remarks"
                           value={state.remarks}
                           onChange={(e) => handleFieldChange(item.id, 'remarks', e.target.value)}
+                          onKeyDown={(e) => handleKeyDownNavigation(e, rIdx, 'remarks')}
                           placeholder="Remarks..."
                           className={`w-full px-2 py-1 text-xs rounded border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
                             isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'

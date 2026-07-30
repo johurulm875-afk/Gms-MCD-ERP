@@ -1292,10 +1292,13 @@ export default function App() {
 
   // Batch Quick Updates by Store Ref
   const handleSaveQuickUpdates = async (updates: QuickUpdatePayload[]) => {
+    if (!updates || updates.length === 0) return;
+
+    let updatedItemsForDb: TwillTapeItem[] = [];
+
     // 1. Instant local update
-    let nextList: TwillTapeItem[] = [];
     setItems(prev => {
-      nextList = prev.map(item => {
+      const nextList = prev.map(item => {
         const match = updates.find(u => u.id === item.id);
         if (match) {
           const updatedRecvLogs = [...(item.receive_logs || [])];
@@ -1306,7 +1309,7 @@ export default function App() {
           if (match.new_issue_log) updatedIssLogs.push(match.new_issue_log);
           if (match.new_issue_logs) updatedIssLogs.push(...match.new_issue_logs);
 
-          return {
+          const updated = {
             ...item,
             receive_qty: match.receive_qty,
             receive_date: match.receive_date,
@@ -1319,6 +1322,8 @@ export default function App() {
             receive_logs: updatedRecvLogs,
             issue_logs: updatedIssLogs
           };
+          updatedItemsForDb.push(updated);
+          return updated;
         }
         return item;
       });
@@ -1328,8 +1333,7 @@ export default function App() {
     showToast(`Batch updated ${updates.length} item(s) in real-time!`, "success");
 
     // 2. Build full payload objects and upsert to Supabase
-    const updatedItems = nextList.filter(item => updates.some(u => u.id === item.id));
-    const payloads = updatedItems.map(item => ({
+    const payloads = updatedItemsForDb.map(item => ({
       id: item.id,
       buyer_name: item.buyer_name || (item as any).buyer || '',
       buyer: item.buyer_name || (item as any).buyer || '',
@@ -1364,22 +1368,28 @@ export default function App() {
       issue_logs: item.issue_logs || []
     }));
 
-    try {
-      await withTimeout(
-        supabase.from('twill_tape').upsert(payloads),
-        4000
-      );
-    } catch (err) {
-      console.warn("Notice saving twill tape quick updates:", err);
+    if (payloads.length > 0) {
+      try {
+        const { error } = await supabase.from('twill_tape').upsert(payloads);
+        if (error) {
+          console.error("Supabase upsert error (twill_tape):", error);
+          showToast(`Supabase Save Error: ${error.message}`, "error");
+        }
+      } catch (err: any) {
+        console.warn("Notice saving twill tape quick updates:", err);
+      }
     }
   };
 
   // Batch Quick Updates by Store Ref for Sewing Thread
   const handleSaveSewingQuickUpdates = async (updates: QuickUpdatePayload[]) => {
+    if (!updates || updates.length === 0) return;
+
+    let updatedItemsForDb: SewingThreadItem[] = [];
+
     // 1. Instant local update
-    let nextList: SewingThreadItem[] = [];
     setSewingThreadItems(prev => {
-      nextList = prev.map(item => {
+      const nextList = prev.map(item => {
         const match = updates.find(u => u.id === item.id);
         if (match) {
           const updatedRecvLogs = [...(item.receive_logs || [])];
@@ -1390,7 +1400,7 @@ export default function App() {
           if (match.new_issue_log) updatedIssLogs.push(match.new_issue_log);
           if (match.new_issue_logs) updatedIssLogs.push(...match.new_issue_logs);
 
-          return {
+          const updated = {
             ...item,
             receive_qty: match.receive_qty,
             receive_date: match.receive_date,
@@ -1403,6 +1413,8 @@ export default function App() {
             receive_logs: updatedRecvLogs,
             issue_logs: updatedIssLogs
           };
+          updatedItemsForDb.push(updated);
+          return updated;
         }
         return item;
       });
@@ -1412,8 +1424,7 @@ export default function App() {
     showToast(`Batch updated ${updates.length} sewing thread item(s)!`, "success");
 
     // 2. Build full payload objects and upsert to Supabase
-    const updatedItems = nextList.filter(item => updates.some(u => u.id === item.id));
-    const payloads = updatedItems.map(item => ({
+    const payloads = updatedItemsForDb.map(item => ({
       id: item.id,
       buyer_name: item.buyer_name || item.buyer || '',
       buyer: item.buyer_name || item.buyer || '',
@@ -1449,13 +1460,16 @@ export default function App() {
       issue_logs: item.issue_logs || []
     }));
 
-    try {
-      await withTimeout(
-        supabase.from('sewing_thread').upsert(payloads),
-        4000
-      );
-    } catch (err) {
-      console.warn("Notice saving sewing thread quick updates:", err);
+    if (payloads.length > 0) {
+      try {
+        const { error } = await supabase.from('sewing_thread').upsert(payloads);
+        if (error) {
+          console.error("Supabase upsert error (sewing_thread):", error);
+          showToast(`Supabase Save Error: ${error.message}`, "error");
+        }
+      } catch (err: any) {
+        console.warn("Notice saving sewing thread quick updates:", err);
+      }
     }
   };
 
