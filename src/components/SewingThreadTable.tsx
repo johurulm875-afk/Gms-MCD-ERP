@@ -612,8 +612,18 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                       <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.order_no || '-'}</td>
                       <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.sr_gt || '-'}</td>
                       <td className="py-2.5 px-2 font-mono font-bold text-indigo-900 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.store_ref || item.s_thread_ref || '-'}</td>
-                      <td className="py-2.5 px-2 font-bold text-slate-800 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.thread_count || item.count || '-'}</td>
-                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.meter || '-'}</td>
+                      <td className="py-2.5 px-2 font-bold text-slate-800 whitespace-nowrap border border-slate-300 dark:border-slate-700">
+                        {(() => {
+                          const c = String(item.thread_count || item.count || '').trim();
+                          return (c.toLowerCase() === '150/d' || c.toLowerCase() === '150d') ? '-' : (c || '-');
+                        })()}
+                      </td>
+                      <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">
+                        {(() => {
+                          const m = String(item.meter || '').trim();
+                          return (m.toLowerCase() === '150/d' || m.toLowerCase() === '150d' || m.toLowerCase().includes('150/d')) ? '-' : (m || '-');
+                        })()}
+                      </td>
                       <td className="py-2.5 px-2 text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.per_body_consm || '-'}</td>
 
                       {/* Colour Cell: Highlighted in Yellow ONLY if receive_qty == 0 */}

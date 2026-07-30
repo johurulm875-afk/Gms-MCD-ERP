@@ -586,8 +586,8 @@ export default function App() {
       const records = await fetchAllRowsFromSupabase<any>('drawstring');
       if (records && records.length > 0) {
         const mappedRecords: DrawstringItem[] = records.map((r: any, idx: number) => {
-          const bName = r.buyer_name || r.buyer || 'GMS Buyer';
-          const stRef = r.store_ref || r.sr_gt_no || `DS-${r.sl_no || r.id || idx + 1}`;
+          const bName = r.buyer_name || r.buyer || r['Buyer'] || '';
+          const stRef = r.store_ref || r.sr_gt_no || r['SR/GT'] || r['store_ref'] || '';
           const bQty = Number(r.booking_qty ?? 0);
           const rQty = Number(r.receive_qty ?? r.rcv_qty ?? 0);
           const iQty = Number(r.issue_qty ?? 0);
@@ -641,8 +641,8 @@ export default function App() {
       const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape');
       if (records && records.length > 0) {
         const mappedRecords: TwillTapeItem[] = records.map((r: any) => {
-          const bName = r.buyer_name || r.buyer || 'GMS Buyer';
-          const stRef = r.store_ref || r.twill_ref || r.s_tape_ref || r.tape_ref || `TW-${r.id}`;
+          const bName = r.buyer_name || r.buyer || r['Buyer'] || '';
+          const stRef = r.store_ref || r.twill_ref || r.s_tape_ref || r.tape_ref || '';
           const col = r.colour || r.color || '';
           const sizeCm = r.cm || r.size || r.width || '';
           const rDate = r.receive_date || r.rcvd_date || '';
@@ -721,7 +721,7 @@ export default function App() {
         // Deduplicate records by ID or composite key
         const uniqueMap = new Map<string, any>();
         combinedRaw.forEach((r, idx) => {
-          const key = r.id ? `id_${r.id}` : `ref_${r.store_ref || r.s_thread_ref || r.sr_gt_no || r.sr_gt}_${r.style}_${r.colour || r.color}_${idx}`;
+          const key = r.id !== undefined && r.id !== null ? `id_${r.id}` : `idx_${idx}_${r['Style'] || r.style || ''}_${r['COLOUR'] || r.colour || r.color || ''}`;
           if (!uniqueMap.has(key)) {
             uniqueMap.set(key, r);
           }
@@ -729,12 +729,43 @@ export default function App() {
 
         const records = Array.from(uniqueMap.values());
         const mappedRecords: SewingThreadItem[] = records.map((r: any, idx: number) => {
-          const bName = r.buyer_name || r.buyer || 'GMS Buyer';
-          const stRef = r.store_ref || r.s_thread_ref || r.sr_gt_no || r.sr_gt || r['sr/gt'] || `TH-${r.id || r.sl_no || idx + 1}`;
-          const bQty = Number(r.booking_qty ?? r.booking_quantity ?? r.qty ?? 0);
-          const rQty = Number(r.receive_qty ?? r.rcvd_qty ?? r.rcv_qty ?? r.rec_qty ?? r.received_qty ?? 0);
-          const iQty = Number(r.issue_qty ?? r.iss_qty ?? r.issued_qty ?? 0);
-          const balQty = r.balance_qty !== undefined && r.balance_qty !== null ? Number(r.balance_qty) : (r.due_qty !== undefined && r.due_qty !== null ? Number(r.due_qty) : (r.bal_qty !== undefined && r.bal_qty !== null ? Number(r.bal_qty) : Math.max(0, bQty - rQty)));
+          const bName = r['Buyer'] || r['buyer'] || r.buyer_name || r.buyer || '';
+          const jobNoVal = r['Job No'] || r['job_no'] || r['job'] || r.job_no || r.job || '';
+          const styleVal = r['Style'] || r['style'] || r.style || r.style_no || '';
+          const orderNoVal = r['Order No'] || r['order_no'] || r.order_no || r.po_no || r.po || '';
+          const srGtVal = r['SR/GT'] || r['sr_gt'] || r.sr_gt || r.sr_gt_no || r['sr/gt'] || '';
+          const sThreadRefVal = r['S.Thread Ref.'] || r['s_thread_ref'] || r.s_thread_ref || r.store_ref || '';
+          const storeRefVal = r.store_ref || sThreadRefVal || srGtVal || '';
+
+          let countVal = String(r['Count'] || r['count'] || r.count || r.thread_count || '').trim();
+          if (countVal.toLowerCase() === '150/d' || countVal.toLowerCase() === '150d' || countVal.toLowerCase() === '150/d/2') {
+            countVal = '';
+          }
+
+          let meterVal = String(r['Meter'] || r['meter'] || r.meter || r.length || r.cone_meter || r.con_meter || '').trim();
+          if (meterVal.toLowerCase() === '150/d' || meterVal.toLowerCase() === '150d' || meterVal.toLowerCase().includes('150/d')) {
+            meterVal = '';
+          }
+          const perBodyConsmVal = r['Per Body Consm.'] || r['per_body_consm'] || r.per_body_consm || r.consm || r.consumption || '';
+          const colourVal = r['COLOUR'] || r['Colour'] || r['colour'] || r.colour || r.color || r.shade_name || '';
+          const pantoneVal = r['Pantone'] || r['pantone'] || r.shade_no || r.pantone || r.shade || '';
+
+          const bQty = Number(r['Booking QTY'] ?? r['Booking Qty'] ?? r['booking_qty'] ?? r.booking_qty ?? r.booking_quantity ?? r.qty ?? 0);
+          const rQty = Number(r['Receive Qty'] ?? r['receive_qty'] ?? r.receive_qty ?? r.rcvd_qty ?? r.rcv_qty ?? r.rec_qty ?? r.received_qty ?? 0);
+          const iQty = Number(r['Issue Qty'] ?? r['issue_qty'] ?? r.issue_qty ?? r.iss_qty ?? r.issued_qty ?? 0);
+
+          const balQty = r['Balance Qty'] !== undefined && r['Balance Qty'] !== null ? Number(r['Balance Qty']) 
+            : (r.balance_qty !== undefined && r.balance_qty !== null ? Number(r.balance_qty) 
+            : (r.due_qty !== undefined && r.due_qty !== null ? Number(r.due_qty) 
+            : (r.bal_qty !== undefined && r.bal_qty !== null ? Number(r.bal_qty) 
+            : Math.max(0, bQty - rQty))));
+
+          const rDate = r['RCVD DATE'] || r['rcvd_date'] || r.rcvd_date || r.receive_date || r.rec_date || '';
+          const rChallan = r['RCVD CHALLAN'] || r['rcvd_challan'] || r.rcvd_challan || r.receive_challan || r.rec_challan || '';
+          const iDate = r['Issue Date'] || r['issue_date'] || r.issue_date || r.iss_date || '';
+          const iChallan = r['Issue Challan'] || r['issue_challan'] || r.issue_challan || r.iss_challan || '';
+          const supplierVal = r['Supplier'] || r.supplier || r.supplier_name || '';
+          const remarksVal = r['Remarks'] || r.remarks || r.note || r.comments || '';
 
           return {
             ...r,
@@ -743,34 +774,35 @@ export default function App() {
             buyer: bName,
             date: r.date || r.booking_date || r.date_created || r.created_at || '',
             booking_challan: r.booking_challan || r.ref_no_job_no || r.ref_no || r.challan || '',
-            style: r.style || r.style_no || '',
-            order_no: r.order_no || r.po_no || r.po || '',
-            store_ref: stRef,
-            s_thread_ref: stRef,
-            job_no: r.job_no || r.job || '',
-            colour: r.colour || r.color || r.shade_name || '',
-            color: r.colour || r.color || r.shade_name || '',
+            style: styleVal,
+            order_no: orderNoVal,
+            sr_gt: srGtVal,
+            store_ref: storeRefVal,
+            s_thread_ref: sThreadRefVal,
+            job_no: jobNoVal,
+            colour: colourVal,
+            color: colourVal,
             item_name: r.item_name || r.item || 'Spun Polyester Thread',
-            thread_count: r.thread_count || r.count || '',
-            count: r.thread_count || r.count || '',
-            shade_no: r.shade_no || r.pantone || r.shade || '',
-            pantone: r.shade_no || r.pantone || r.shade || '',
-            meter: r.meter || r.length || r.cone_meter || r.con_meter || '',
-            per_body_consm: r.per_body_consm || r.consm || r.consumption || '',
-            supplier: r.supplier || r.supplier_name || '',
+            thread_count: countVal,
+            count: countVal,
+            shade_no: pantoneVal,
+            pantone: pantoneVal,
+            meter: meterVal,
+            per_body_consm: perBodyConsmVal,
+            supplier: supplierVal,
             booking_qty: bQty,
             receive_qty: rQty,
             rcvd_qty: rQty,
-            receive_date: r.receive_date || r.rcvd_date || r.rec_date || '',
-            rcvd_date: r.receive_date || r.rcvd_date || r.rec_date || '',
-            receive_challan: r.receive_challan || r.rcvd_challan || r.rec_challan || '',
-            rcvd_challan: r.receive_challan || r.rcvd_challan || r.rec_challan || '',
+            receive_date: rDate,
+            rcvd_date: rDate,
+            receive_challan: rChallan,
+            rcvd_challan: rChallan,
             issue_qty: iQty,
             iss_qty: iQty,
-            issue_date: r.issue_date || r.iss_date || '',
-            issue_challan: r.issue_challan || r.iss_challan || '',
+            issue_date: iDate,
+            issue_challan: iChallan,
             balance_qty: balQty,
-            remarks: r.remarks || r.note || r.comments || '',
+            remarks: remarksVal,
             receive_logs: Array.isArray(r.receive_logs) ? r.receive_logs : [],
             issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
           };
