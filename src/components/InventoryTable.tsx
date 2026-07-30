@@ -77,6 +77,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
     issue_date: '',
     issue_challan: '',
     balance_qty: '',
+    batch_no: '',
     remarks: ''
   });
 
@@ -107,6 +108,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
       issue_date: '',
       issue_challan: '',
       balance_qty: '',
+      batch_no: '',
       remarks: ''
     });
     setCurrentPage(1);
@@ -145,6 +147,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
     if (colFilters.issue_date && !(item.issue_date || '').toLowerCase().includes(colFilters.issue_date.toLowerCase())) return false;
     if (colFilters.issue_challan && !(item.issue_challan || '').toLowerCase().includes(colFilters.issue_challan.toLowerCase())) return false;
     if (colFilters.balance_qty && !String(item.balance_qty).includes(colFilters.balance_qty)) return false;
+    if (colFilters.batch_no && !(item.batch_no || '').toLowerCase().includes(colFilters.batch_no.toLowerCase())) return false;
     if (colFilters.remarks && !(item.remarks || '').toLowerCase().includes(colFilters.remarks.toLowerCase())) return false;
     return true;
   });
@@ -248,12 +251,6 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
               <th className="py-3 px-2 border-b border-slate-800 cursor-pointer hover:bg-slate-800" onClick={() => handleSort('buyer_name')}>
                 <div className="flex items-center gap-1">Buyer Name <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
               </th>
-              <th className="py-3 px-2 border-b border-slate-800 cursor-pointer hover:bg-slate-800" onClick={() => handleSort('date')}>
-                <div className="flex items-center gap-1">Booking Date <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
-              </th>
-              <th className="py-3 px-2 border-b border-slate-800 cursor-pointer hover:bg-slate-800" onClick={() => handleSort('booking_challan')}>
-                <div className="flex items-center gap-1">Booking Challan <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
-              </th>
               <th className="py-3 px-2 border-b border-slate-800 cursor-pointer hover:bg-slate-800" onClick={() => handleSort('style')}>
                 <div className="flex items-center gap-1">Style <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
               </th>
@@ -302,6 +299,9 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
               <th className="py-3 px-2 border-b border-slate-800 text-right cursor-pointer hover:bg-slate-800" onClick={() => handleSort('balance_qty')}>
                 <div className="flex items-center justify-end gap-1">Balance Qty (Pcs) <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
               </th>
+              <th className="py-3 px-2 border-b border-slate-800 cursor-pointer hover:bg-slate-800" onClick={() => handleSort('batch_no')}>
+                <div className="flex items-center gap-1">Batch No <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
+              </th>
               <th className="py-3 px-2 border-b border-slate-800 cursor-pointer hover:bg-slate-800" onClick={() => handleSort('remarks')}>
                 <div className="flex items-center gap-1">Remarks <ArrowUpDown className="w-3 h-3 opacity-60" /></div>
               </th>
@@ -314,8 +314,6 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
             <tr className="bg-slate-800/90 border-b border-slate-700">
               <th className="p-1"><input type="text" value={colFilters.id} onChange={e => handleColFilterChange('id', e.target.value)} placeholder="Filter SL" className="w-12 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1"><input type="text" value={colFilters.buyer_name} onChange={e => handleColFilterChange('buyer_name', e.target.value)} placeholder="Filter Buyer" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
-              <th className="p-1"><input type="text" value={colFilters.date} onChange={e => handleColFilterChange('date', e.target.value)} placeholder="Filter Date" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
-              <th className="p-1"><input type="text" value={colFilters.booking_challan} onChange={e => handleColFilterChange('booking_challan', e.target.value)} placeholder="Filter Challan" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1"><input type="text" value={colFilters.style} onChange={e => handleColFilterChange('style', e.target.value)} placeholder="Filter Style" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1"><input type="text" value={colFilters.order_no} onChange={e => handleColFilterChange('order_no', e.target.value)} placeholder="Filter Order" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1"><input type="text" value={colFilters.store_ref} onChange={e => handleColFilterChange('store_ref', e.target.value)} placeholder="Filter StoreRef" className="w-24 px-1 py-0.5 bg-indigo-950 border border-indigo-700 text-indigo-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
@@ -332,6 +330,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
               <th className="p-1"><input type="text" value={colFilters.issue_date} onChange={e => handleColFilterChange('issue_date', e.target.value)} placeholder="Filter I Date" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1"><input type="text" value={colFilters.issue_challan} onChange={e => handleColFilterChange('issue_challan', e.target.value)} placeholder="Filter I Ch" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1"><input type="text" value={colFilters.balance_qty} onChange={e => handleColFilterChange('balance_qty', e.target.value)} placeholder="Filter Bal" className="w-16 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal text-right" /></th>
+              <th className="p-1"><input type="text" value={colFilters.batch_no} onChange={e => handleColFilterChange('batch_no', e.target.value)} placeholder="Filter Batch" className="w-16 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1"><input type="text" value={colFilters.remarks} onChange={e => handleColFilterChange('remarks', e.target.value)} placeholder="Filter Rem" className="w-20 px-1 py-0.5 bg-slate-900 border border-slate-700 text-slate-100 text-[10px] rounded focus:outline-none focus:border-indigo-400 font-normal" /></th>
               <th className="p-1 text-center text-[10px] text-slate-400 font-normal">—</th>
             </tr>
@@ -341,7 +340,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
           <tbody className="divide-y divide-slate-200/60 font-medium">
             {isLoading ? (
               <tr>
-                <td colSpan={22} className="py-16 text-center text-slate-500">
+                <td colSpan={21} className="py-16 text-center text-slate-500">
                   <div className="inline-flex items-center gap-2 font-bold text-slate-700 animate-pulse">
                     <Layers className="w-5 h-5 animate-spin text-indigo-600" />
                     Loading inventory records from Supabase...
@@ -350,7 +349,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
               </tr>
             ) : paginatedItems.length === 0 ? (
               <tr>
-                <td colSpan={22} className="py-16 text-center text-slate-500">
+                <td colSpan={21} className="py-16 text-center text-slate-500">
                   <div className="max-w-sm mx-auto space-y-2">
                     <AlertCircle className="w-8 h-8 text-slate-400 mx-auto" />
                     <p className="font-bold text-slate-700">No matching inventory rows found</p>
@@ -373,16 +372,6 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                     {/* Buyer Name */}
                     <td className="py-2.5 px-2 font-bold text-slate-900">
                       {item.buyer_name}
-                    </td>
-
-                    {/* Booking Date */}
-                    <td className="py-2.5 px-2 font-mono text-slate-700">
-                      {item.date || '—'}
-                    </td>
-
-                    {/* Booking Challan */}
-                    <td className="py-2.5 px-2 font-mono text-slate-700">
-                      {item.booking_challan || '—'}
                     </td>
 
                     {/* Style */}
@@ -493,6 +482,11 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                       }`}>
                         {item.balance_qty.toLocaleString()}
                       </span>
+                    </td>
+
+                    {/* Batch No */}
+                    <td className="py-2.5 px-2 font-mono text-slate-700 text-[11px]" title={item.batch_no}>
+                      {item.batch_no || '—'}
                     </td>
 
                     {/* Remarks */}

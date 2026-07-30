@@ -659,7 +659,25 @@ export default function App() {
     setDbErrorMessage(null);
 
     try {
-      const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape').catch(() => []);
+      // 1. SUPABASE TABLE NAME: Fetch directly from 'twill_tape'
+      // 2. REMOVE LIMIT / FETCH ALL ROWS: Fetch up to 10,000 rows using range(0, 9999)
+      let records: any[] = [];
+      try {
+        const res = await withTimeout(
+          supabase
+            .from('twill_tape')
+            .select('*')
+            .range(0, 9999),
+          8000
+        );
+        records = res.data || [];
+        if (res.error) {
+          console.warn("Notice fetching twill_tape from Supabase:", res.error.message);
+        }
+      } catch (e) {
+        records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape').catch(() => []);
+      }
+
       let localItems: TwillTapeItem[] = [];
       try {
         const saved = localStorage.getItem('twill_tape_items');
@@ -668,50 +686,69 @@ export default function App() {
 
       if (records && records.length > 0) {
         const mappedRecords: TwillTapeItem[] = records.map((r: any, idx: number) => {
-          const bName = r.buyer_name || r.buyer || r['Buyer'] || '';
-          const stRef = r.store_ref || r.twill_ref || r.s_tape_ref || r.tape_ref || '';
-          const col = r.colour || r.color || '';
-          const sizeCm = r.cm || r.size || r.width || '';
-          const rDate = r.receive_date || r.rcvd_date || '';
-          const rChallan = r.receive_challan || r.rcvd_challan || '';
-          const iDate = r.issue_date || r.iss_date || '';
-          const iChallan = r.issue_challan || r.iss_challan || '';
-          const bQty = Number(r.booking_qty ?? r.booking_quantity ?? r.qty ?? 0);
-          const rQty = Number(r.receive_qty ?? r.rcvd_qty ?? 0);
-          const iQty = Number(r.issue_qty ?? r.iss_qty ?? 0);
-          const balQty = rQty > 0 ? Math.max(0, rQty - iQty) : (r.balance_qty !== undefined ? Number(r.balance_qty) : bQty);
+          // 3. COLUMN MAPPING directly to twill_tape table fields
+          const buyerVal = r.buyer ?? r.buyer_name ?? r['Buyer'] ?? '';
+          const styleVal = r.style ?? '';
+          const orderNoVal = r.order_no ?? '';
+          const jobNoVal = r.job_no ?? '';
+          const storeRefVal = r.store_ref ?? r.twill_ref ?? r.s_tape_ref ?? r.tape_ref ?? '';
+          const colourVal = r.colour ?? r.color ?? '';
+          const itemNameVal = r.item_name ?? 'H.B. TAPE';
+          const cmVal = r.cm ?? r.size ?? r.width ?? '';
+          const ydsVal = r.yds ?? 'YDS';
+          const rcvdDateVal = r.rcvd_date ?? r.receive_date ?? '';
+          const rcvdChallanVal = r.rcvd_challan ?? r.receive_challan ?? '';
+          const bookingQtyVal = Number(r.booking_qty ?? r.booking_quantity ?? r.qty ?? 0);
+          const receiveQtyVal = Number(r.receive_qty ?? r.rcvd_qty ?? 0);
+          const issueDateVal = r.issue_date ?? r.iss_date ?? '';
+          const issueChallanVal = r.issue_challan ?? r.iss_challan ?? '';
+          const issueQtyVal = Number(r.issue_qty ?? r.iss_qty ?? 0);
+          const balanceQtyVal = r.balance_qty !== undefined && r.balance_qty !== null
+            ? Number(r.balance_qty)
+            : (receiveQtyVal > 0 ? Math.max(0, receiveQtyVal - issueQtyVal) : bookingQtyVal);
+          const batchNoVal = r.batch_no ?? '';
+          const remarksVal = r.remarks ?? '';
 
           return {
             ...r,
             id: Number(r.id || idx + 1),
-            buyer_name: bName,
-            buyer: bName,
-            date: r.date || '',
+            buyer: buyerVal,
+            buyer_name: buyerVal,
+            date: r.date || rcvdDateVal || '',
             booking_challan: r.booking_challan || '',
-            style: r.style || '',
-            order_no: r.order_no || '',
-            store_ref: stRef,
-            twill_ref: stRef,
-            job_no: r.job_no || '',
-            colour: col,
-            color: col,
-            item_name: r.item_name || 'H.B. TAPE',
-            cm: sizeCm,
-            yds: r.yds || 'YDS',
-            booking_qty: bQty,
-            receive_qty: rQty,
-            receive_date: rDate,
-            receive_challan: rChallan,
-            issue_qty: iQty,
-            issue_date: iDate,
-            issue_challan: iChallan,
-            balance_qty: balQty,
-            remarks: r.remarks || '',
+            style: styleVal,
+            order_no: orderNoVal,
+            job_no: jobNoVal,
+            store_ref: storeRefVal,
+            twill_ref: storeRefVal,
+            colour: colourVal,
+            color: colourVal,
+            item_name: itemNameVal,
+            cm: cmVal,
+            size: cmVal,
+            yds: ydsVal,
+            booking_qty: bookingQtyVal,
+            receive_qty: receiveQtyVal,
+            rcvd_qty: receiveQtyVal,
+            receive_date: rcvdDateVal,
+            rcvd_date: rcvdDateVal,
+            receive_challan: rcvdChallanVal,
+            rcvd_challan: rcvdChallanVal,
+            issue_qty: issueQtyVal,
+            iss_qty: issueQtyVal,
+            issue_date: issueDateVal,
+            iss_date: issueDateVal,
+            issue_challan: issueChallanVal,
+            iss_challan: issueChallanVal,
+            balance_qty: balanceQtyVal,
+            batch_no: batchNoVal,
+            remarks: remarksVal,
             receive_logs: Array.isArray(r.receive_logs) ? r.receive_logs : [],
             issue_logs: Array.isArray(r.issue_logs) ? r.issue_logs : []
           };
         });
 
+        // Merge newly added local unsynced bookings if present
         const existingKeys = new Set(mappedRecords.map(item => `${(item.buyer_name || '').toLowerCase()}_${(item.style || '').toLowerCase()}_${(item.colour || '').toLowerCase()}_${(item.store_ref || '').toLowerCase()}_${item.booking_qty}`));
         
         const extraLocal = localItems.filter(l => {
@@ -721,7 +758,7 @@ export default function App() {
 
         const finalMerged = [...extraLocal, ...mappedRecords].map((item, index) => ({
           ...item,
-          id: index + 1
+          id: item.id || index + 1
         }));
 
         setItems(finalMerged);
@@ -731,6 +768,7 @@ export default function App() {
         setItems(localItems);
         setIsConnected(true);
       } else {
+        setItems([]);
         setIsConnected(true);
       }
     } catch (err: any) {
@@ -959,7 +997,29 @@ export default function App() {
 
     // 2. Asynchronous Supabase sync with timeout
     try {
-      await withTimeout(supabase.from('twill_tape').upsert(batchWithIds), 3500);
+      const dbPayloads = batchWithIds.map(item => ({
+        buyer: item.buyer || item.buyer_name || '',
+        style: item.style || '',
+        order_no: item.order_no || '',
+        job_no: item.job_no || '',
+        store_ref: item.store_ref || '',
+        colour: item.colour || item.color || '',
+        item_name: item.item_name || 'H.B. TAPE',
+        cm: item.cm || '',
+        yds: item.yds || 'YDS',
+        rcvd_date: item.receive_date || item.rcvd_date || '',
+        rcvd_challan: item.receive_challan || item.rcvd_challan || '',
+        booking_qty: Number(item.booking_qty) || 0,
+        receive_qty: Number(item.receive_qty) || 0,
+        issue_date: item.issue_date || '',
+        issue_challan: item.issue_challan || '',
+        issue_qty: Number(item.issue_qty) || 0,
+        balance_qty: Number(item.balance_qty) || 0,
+        batch_no: item.batch_no || '',
+        remarks: item.remarks || ''
+      }));
+
+      await withTimeout(supabase.from('twill_tape').upsert(dbPayloads), 3500);
     } catch (err) {
       console.warn("Supabase twill_tape insert notice:", err);
     }
@@ -1056,37 +1116,25 @@ export default function App() {
 
       const payload = {
         id: updatedItem.id,
-        buyer_name: bName,
         buyer: bName,
-        date: updatedItem.date || '',
-        booking_challan: updatedItem.booking_challan || '',
         style: updatedItem.style || '',
         order_no: updatedItem.order_no || '',
-        store_ref: stRef,
-        twill_ref: stRef,
         job_no: updatedItem.job_no || '',
+        store_ref: stRef,
         colour: col,
-        color: col,
         item_name: updatedItem.item_name || 'H.B. TAPE',
         cm: updatedItem.cm || '',
         yds: updatedItem.yds || 'YDS',
+        rcvd_date: rDate,
+        rcvd_challan: rChallan,
         booking_qty: Number(updatedItem.booking_qty) || 0,
         receive_qty: Number(updatedItem.receive_qty) || 0,
-        rcvd_qty: Number(updatedItem.receive_qty) || 0,
-        receive_date: rDate,
-        rcvd_date: rDate,
-        receive_challan: rChallan,
-        rcvd_challan: rChallan,
-        issue_qty: Number(updatedItem.issue_qty) || 0,
-        iss_qty: Number(updatedItem.issue_qty) || 0,
         issue_date: iDate,
-        iss_date: iDate,
         issue_challan: iChallan,
-        iss_challan: iChallan,
+        issue_qty: Number(updatedItem.issue_qty) || 0,
         balance_qty: Number(updatedItem.balance_qty) || 0,
-        remarks: updatedItem.remarks || '',
-        receive_logs: updatedItem.receive_logs || [],
-        issue_logs: updatedItem.issue_logs || []
+        batch_no: updatedItem.batch_no || '',
+        remarks: updatedItem.remarks || ''
       };
 
       await withTimeout(

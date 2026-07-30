@@ -58,6 +58,7 @@ export interface TwillTapeItem {
   issue_challan: string;
   iss_challan?: string;
   balance_qty: number;
+  batch_no?: string;
   remarks: string;
   receive_logs?: TransactionLog[];
   issue_logs?: TransactionLog[];

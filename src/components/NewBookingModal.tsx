@@ -285,32 +285,6 @@ export const NewBookingModal: React.FC<NewBookingModalProps> = ({
                 )}
               </div>
 
-              {/* Booking Date */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Booking Date *</label>
-                <input
-                  type="text"
-                  value={formData.date || ''}
-                  onChange={(e) => handleChange('date', e.target.value)}
-                  placeholder="DD.MM.YYYY"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-
-              {/* Booking Challan */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Booking Challan *</label>
-                <input
-                  type="text"
-                  value={formData.booking_challan || ''}
-                  onChange={(e) => handleChange('booking_challan', e.target.value)}
-                  placeholder="e.g. 26787"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
