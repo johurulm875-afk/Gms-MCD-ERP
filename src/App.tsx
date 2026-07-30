@@ -25,7 +25,7 @@ import { UserProfileView } from './components/UserProfileView';
 import { AdminPanel } from './components/AdminPanel';
 import { GmsLogo } from './components/GmsLogo';
 import { matchesStatusFilter, getItemStatus } from './utils/statusHelper';
-import { generateCompanyMultiSheetExcel, ExcelColumnDef } from './utils/excelExportHelper';
+import { generateCompanyMultiSheetExcel, normalizeBuyerName, ExcelColumnDef } from './utils/excelExportHelper';
 
 import { 
   Search, Plus, Zap, Database, RefreshCw, Download, Filter, Package, 
@@ -1465,8 +1465,11 @@ export default function App() {
   };
 
   const uniqueBuyers = useMemo(() => {
-    const set = new Set<string>(['Stanley Stella', 'KARIBAN', 'DIADORA']);
-    items.forEach(i => { if (i.buyer_name) set.add(i.buyer_name); });
+    const set = new Set<string>(['STANLEY STELLA', 'KARIBAN', 'DIADORA']);
+    items.forEach(i => {
+      const b = i.buyer_name || (i as any).buyer;
+      if (b) set.add(normalizeBuyerName(b));
+    });
     return Array.from(set).sort();
   }, [items]);
 
@@ -1478,7 +1481,11 @@ export default function App() {
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
-      if (selectedBuyer !== 'ALL' && item.buyer_name !== selectedBuyer) return false;
+      if (selectedBuyer !== 'ALL') {
+        const itemB = normalizeBuyerName(item.buyer_name || (item as any).buyer || '');
+        const selB = normalizeBuyerName(selectedBuyer);
+        if (itemB !== selB) return false;
+      }
       if (selectedStyle !== 'ALL' && item.style !== selectedStyle) return false;
       if (!matchesStatusFilter(item.booking_qty, item.receive_qty, statusFilter)) return false;
 

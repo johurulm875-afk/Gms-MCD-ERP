@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import XLSX from 'xlsx-js-style';
 import { DrawstringItem, TransactionLog, AppTheme, UserProfile } from '../types';
 import { canUserModifyData } from '../utils/permissionHelper';
-import { generateCompanyMultiSheetExcel, ExcelColumnDef } from '../utils/excelExportHelper';
+import { generateCompanyMultiSheetExcel, normalizeBuyerName, ExcelColumnDef } from '../utils/excelExportHelper';
 import { 
   PackageCheck, Search, Plus, FileSpreadsheet, Zap, Download,
   RefreshCw, ChevronLeft, ChevronRight, History, X, Lock, Edit3, Trash2, Save
@@ -110,14 +110,21 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
 
   // Unique Buyers for Filter
   const buyers = useMemo(() => {
-    const list = Array.from(new Set(items.map(i => i.buyer || i.buyer_name))).filter(Boolean);
-    return ['ALL', ...list];
+    const set = new Set<string>();
+    items.forEach(i => {
+      const b = i.buyer || i.buyer_name;
+      if (b) set.add(normalizeBuyerName(b));
+    });
+    return ['ALL', ...Array.from(set).sort()];
   }, [items]);
 
   // Instant Filtered Items
   const filteredItems = useMemo(() => {
     return items.filter(item => {
       const bName = item.buyer || item.buyer_name || '';
+      if (selectedBuyer !== 'ALL') {
+        if (normalizeBuyerName(bName) !== normalizeBuyerName(selectedBuyer)) return false;
+      }
       const bDate = item.booking_date || item.date || '';
       const refJob = item.ref_no_job_no || item.style || item.booking_challan || '';
       const srGt = item.sr_gt_no || item.store_ref || '';

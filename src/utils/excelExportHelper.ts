@@ -286,6 +286,28 @@ function createProfessionalWorksheet<T>(
   return ws;
 }
 
+export function normalizeBuyerName(rawBuyer: string): string {
+  if (!rawBuyer) return 'General Buyer';
+  const clean = rawBuyer.trim().replace(/\s+/g, ' ');
+  const upper = clean.toUpperCase();
+
+  // Normalize all variations of Stanley Stella (e.g. "Stanly And Stella Sa", "Stanley Stella", "Stanly Stella", "Stanley & Stella", etc.) to "STANLEY STELLA"
+  if (
+    upper.includes('STANLEY') ||
+    upper.includes('STANLY') ||
+    upper.includes('STELLA')
+  ) {
+    return 'STANLEY STELLA';
+  }
+
+  // Normalize all variations of Kariban (e.g. "Kariban France", "KARIBAN FRANCE", "KARIBAN", etc.) to "KARIBAN"
+  if (upper.includes('KARIBAN')) {
+    return 'KARIBAN';
+  }
+
+  return upper;
+}
+
 /**
  * Main Multi-Sheet Excel Generator Function
  */
@@ -309,8 +331,7 @@ export function generateCompanyMultiSheetExcel<T>(options: CompanyExcelExportOpt
   const buyerMap: Record<string, T[]> = {};
   data.forEach(item => {
     const rawBuyer = getBuyerName(item);
-    const cleanBuyer = (rawBuyer || 'General Buyer').trim().replace(/\s+/g, ' ');
-    const bNameKey = cleanBuyer.toUpperCase();
+    const bNameKey = normalizeBuyerName(rawBuyer);
     if (!buyerMap[bNameKey]) {
       buyerMap[bNameKey] = [];
     }

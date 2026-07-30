@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import XLSX from 'xlsx-js-style';
 import { SewingThreadItem, StatusFilter, TransactionLog, UserProfile, QuickUpdatePayload, AppTheme } from '../types';
 import { canUserModifyData } from '../utils/permissionHelper';
-import { generateCompanyMultiSheetExcel, ExcelColumnDef } from '../utils/excelExportHelper';
+import { generateCompanyMultiSheetExcel, normalizeBuyerName, ExcelColumnDef } from '../utils/excelExportHelper';
 import { SewingThreadNewBookingModal } from './SewingThreadNewBookingModal';
 import { SewingThreadQuickStoreRefModal } from './SewingThreadQuickStoreRefModal';
 import { 
@@ -66,7 +66,10 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
   }, [openNewBookingSignal]);
 
   // Extract unique buyers & styles
-  const uniqueBuyers = useMemo(() => Array.from(new Set(items.map(i => i.buyer_name || i.buyer).filter(Boolean))), [items]);
+  const uniqueBuyers = useMemo(() => Array.from(new Set(items.map(i => {
+    const b = i.buyer_name || i.buyer;
+    return b ? normalizeBuyerName(b) : '';
+  }).filter(Boolean))), [items]);
   const uniqueStyles = useMemo(() => Array.from(new Set(items.map(i => i.style).filter(Boolean))), [items]);
 
   // Per-column filter state for instant typing search
@@ -129,7 +132,11 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
   const filteredItems = useMemo(() => {
     return items.filter(item => {
       // Buyer filter
-      if (selectedBuyer !== 'ALL' && (item.buyer_name || item.buyer) !== selectedBuyer) return false;
+      if (selectedBuyer !== 'ALL') {
+        const itemB = normalizeBuyerName(item.buyer_name || item.buyer || '');
+        const selB = normalizeBuyerName(selectedBuyer);
+        if (itemB !== selB) return false;
+      }
       // Style filter
       if (selectedStyle !== 'ALL' && item.style !== selectedStyle) return false;
 
