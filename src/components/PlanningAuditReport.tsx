@@ -19,10 +19,76 @@ export interface PlanningAuditOrderRow {
   jobNumber: string;
   orderQtyPcs: number;
   ccd: string;
+  monthKey: string;
+  monthLabel: string;
   status: 'MATCHED' | 'BOOKING DUE';
   matchedRecords: SewingThreadItem[];
   rawRow?: Record<string, any>;
 }
+
+// Helper to normalize and format any CCD/Date/String into a clean Month Label (e.g. "Aug 2026", "Sep 2026")
+export const formatMonthFromCCD = (ccdRaw: string): { monthKey: string; monthLabel: string } => {
+  if (!ccdRaw || ccdRaw === '-' || ccdRaw.trim() === '') {
+    return { monthKey: 'UNSPECIFIED', monthLabel: 'Unspecified Month' };
+  }
+
+  const trimmed = ccdRaw.trim();
+
+  // 1. Check if it's an Excel date serial number like 45500
+  if (/^\d{5}$/.test(trimmed)) {
+    const serial = parseInt(trimmed, 10);
+    const date = new Date((serial - (25567 + 2)) * 86400 * 1000);
+    if (!isNaN(date.getTime())) {
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const mName = monthNames[date.getMonth()];
+      const year = date.getFullYear();
+      return { monthKey: `${year}-${String(date.getMonth() + 1).padStart(2, '0')}`, monthLabel: `${mName} ${year}` };
+    }
+  }
+
+  // 2. Check standard ISO or YYYY-MM-DD or YYYY/MM/DD
+  const isoMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (isoMatch) {
+    const year = isoMatch[1];
+    const monthNum = parseInt(isoMatch[2], 10);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (monthNum >= 1 && monthNum <= 12) {
+      const mName = monthNames[monthNum - 1];
+      return { monthKey: `${year}-${String(monthNum).padStart(2, '0')}`, monthLabel: `${mName} ${year}` };
+    }
+  }
+
+  // 3. Check DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmyMatch) {
+    const year = dmyMatch[3];
+    const monthNum = parseInt(dmyMatch[2], 10);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (monthNum >= 1 && monthNum <= 12) {
+      const mName = monthNames[monthNum - 1];
+      return { monthKey: `${year}-${String(monthNum).padStart(2, '0')}`, monthLabel: `${mName} ${year}` };
+    }
+  }
+
+  // 4. Check Month Name in string (e.g. "August 2026", "Aug-26", "26-Aug", "Aug 2026", "August")
+  const monthNamesFull = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const monthNamesShort = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  const lower = trimmed.toLowerCase();
+  for (let i = 0; i < 12; i++) {
+    if (lower.includes(monthNamesFull[i]) || lower.includes(monthNamesShort[i])) {
+      const mName = monthNamesShort[i].toUpperCase();
+      const yearMatch = trimmed.match(/\b(20\d{2}|\d{2})\b/);
+      let year = '2026';
+      if (yearMatch) {
+        year = yearMatch[1].length === 2 ? `20${yearMatch[1]}` : yearMatch[1];
+      }
+      return { monthKey: `${year}-${String(i + 1).padStart(2, '0')}`, monthLabel: `${mName} ${year}` };
+    }
+  }
+
+  return { monthKey: trimmed.toUpperCase(), monthLabel: trimmed };
+};
 
 interface PlanningAuditReportProps {
   sewingThreadItems?: SewingThreadItem[];
@@ -48,6 +114,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'MATCHED' | 'BOOKING DUE'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBuyerFilter, setSelectedBuyerFilter] = useState('ALL');
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>('ALL');
 
   // Detail Modal State
   const [selectedMatchRow, setSelectedMatchRow] = useState<PlanningAuditOrderRow | null>(null);
@@ -316,6 +383,8 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
           const matchedRecords = matchRowAgainstDatabase(storeRef, styleName, jobNumber, buyer, sourceDb);
           const status: 'MATCHED' | 'BOOKING DUE' = matchedRecords.length > 0 ? 'MATCHED' : 'BOOKING DUE';
 
+          const { monthKey, monthLabel } = formatMonthFromCCD(ccd || '');
+
           return {
             id: `row_${index}_${Date.now()}`,
             slNo: index + 1,
@@ -326,6 +395,8 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
             jobNumber: jobNumber || '-',
             orderQtyPcs: isNaN(qtyPcs) ? 0 : qtyPcs,
             ccd: ccd || '-',
+            monthKey,
+            monthLabel,
             status,
             matchedRecords,
             rawRow: row
@@ -386,6 +457,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
       const parsed: PlanningAuditOrderRow[] = sampleOrders.map((row, index) => {
         const matchedRecords = matchRowAgainstDatabase(row.storeRef, row.styleName, row.jobNumber, row.buyer, sourceDb);
         const status: 'MATCHED' | 'BOOKING DUE' = matchedRecords.length > 0 ? 'MATCHED' : 'BOOKING DUE';
+        const { monthKey, monthLabel } = formatMonthFromCCD(row.ccd);
 
         return {
           id: `sample_${index}`,
@@ -397,6 +469,8 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
           jobNumber: row.jobNumber,
           orderQtyPcs: row.qtyPcs,
           ccd: row.ccd,
+          monthKey,
+          monthLabel,
           status,
           matchedRecords
         };
@@ -416,6 +490,42 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
     return Array.from(set).sort();
   }, [uploadedRows]);
 
+  // Unique delivery months summary for quick clicking and drilldown
+  const monthSummaries = useMemo(() => {
+    const map = new Map<string, {
+      monthKey: string;
+      monthLabel: string;
+      totalOrders: number;
+      matchedCount: number;
+      dueCount: number;
+      totalQtyPcs: number;
+    }>();
+
+    uploadedRows.forEach(r => {
+      const key = r.monthKey || 'UNSPECIFIED';
+      const label = r.monthLabel || 'Unspecified Month';
+
+      if (!map.has(key)) {
+        map.set(key, {
+          monthKey: key,
+          monthLabel: label,
+          totalOrders: 0,
+          matchedCount: 0,
+          dueCount: 0,
+          totalQtyPcs: 0,
+        });
+      }
+
+      const item = map.get(key)!;
+      item.totalOrders += 1;
+      if (r.status === 'MATCHED') item.matchedCount += 1;
+      if (r.status === 'BOOKING DUE') item.dueCount += 1;
+      item.totalQtyPcs += r.orderQtyPcs;
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+  }, [uploadedRows]);
+
   // Filtered rows
   const filteredRows = useMemo(() => {
     return uploadedRows.filter(row => {
@@ -425,6 +535,9 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
       // Buyer filter
       if (selectedBuyerFilter !== 'ALL' && row.buyer.toUpperCase() !== selectedBuyerFilter.toUpperCase()) return false;
 
+      // Month filter
+      if (selectedMonthFilter !== 'ALL' && row.monthKey !== selectedMonthFilter) return false;
+
       // Search query
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
@@ -433,10 +546,12 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
         row.styleName.toLowerCase().includes(q) ||
         row.jobNumber.toLowerCase().includes(q) ||
         row.orderNo.toLowerCase().includes(q) ||
-        row.storeRef.toLowerCase().includes(q)
+        row.storeRef.toLowerCase().includes(q) ||
+        row.ccd.toLowerCase().includes(q) ||
+        row.monthLabel.toLowerCase().includes(q)
       );
     });
-  }, [uploadedRows, filterStatus, selectedBuyerFilter, searchQuery]);
+  }, [uploadedRows, filterStatus, selectedBuyerFilter, selectedMonthFilter, searchQuery]);
 
   // Summary Metrics
   const auditMetrics = useMemo(() => {
@@ -726,6 +841,108 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
         <div className={`p-6 rounded-3xl border shadow-md space-y-4 ${
           isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
         }`}>
+
+          {/* DELIVERY MONTH FILTER CARDS / TABS */}
+          {monthSummaries.length > 0 && (
+            <div className="space-y-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>CCD Delivery Month Filter ({monthSummaries.length} Months Found)</span>
+                </span>
+                {selectedMonthFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMonthFilter('ALL')}
+                    className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold cursor-pointer"
+                  >
+                    Reset Month Filter
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                {/* All Months Card */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedMonthFilter('ALL')}
+                  className={`p-3 rounded-2xl border text-left min-w-[140px] transition-all cursor-pointer flex-shrink-0 ${
+                    selectedMonthFilter === 'ALL'
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-md'
+                      : isLight ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-800' : 'bg-slate-800/80 border-slate-700 hover:bg-slate-800 text-slate-200'
+                  }`}
+                >
+                  <div className="text-xs font-black uppercase">All Months</div>
+                  <div className="text-[11px] font-mono opacity-80 mt-0.5">
+                    {uploadedRows.length} Orders ({auditMetrics.totalQtyPcs.toLocaleString()} Pcs)
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold">
+                    {auditMetrics.dueCount > 0 ? (
+                      <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white font-mono">
+                        {auditMetrics.dueCount} Due
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white font-mono">
+                        All Matched
+                      </span>
+                    )}
+                  </div>
+                </button>
+
+                {/* Individual Month Cards */}
+                {monthSummaries.map((m) => {
+                  const isSelected = selectedMonthFilter === m.monthKey;
+                  const isAllMatched = m.dueCount === 0;
+
+                  return (
+                    <button
+                      key={m.monthKey}
+                      type="button"
+                      onClick={() => setSelectedMonthFilter(m.monthKey)}
+                      className={`p-3 rounded-2xl border text-left min-w-[160px] transition-all cursor-pointer flex-shrink-0 ${
+                        isSelected
+                          ? isAllMatched
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/30'
+                            : 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/30'
+                          : isLight 
+                            ? isAllMatched ? 'bg-emerald-50/60 border-emerald-200 hover:bg-emerald-100/80 text-slate-900' : 'bg-rose-50/60 border-rose-200 hover:bg-rose-100/80 text-slate-900'
+                            : isAllMatched ? 'bg-emerald-950/30 border-emerald-900/60 hover:bg-emerald-900/50 text-emerald-200' : 'bg-rose-950/30 border-rose-900/60 hover:bg-rose-900/50 text-rose-200'
+                      }`}
+                    >
+                      <div className="text-xs font-black uppercase flex items-center justify-between gap-1">
+                        <span>{m.monthLabel}</span>
+                        {isAllMatched ? (
+                          <CheckCircle2 className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-emerald-500'}`} />
+                        ) : (
+                          <AlertCircle className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-rose-500 animate-pulse'}`} />
+                        )}
+                      </div>
+                      
+                      <div className={`text-[11px] font-mono mt-0.5 ${isSelected ? 'text-white/90' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {m.totalOrders} Orders • {m.totalQtyPcs.toLocaleString()} Pcs
+                      </div>
+
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        {isAllMatched ? (
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                            isSelected ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300'
+                          }`}>
+                            100% MATCHED / RCVD
+                          </span>
+                        ) : (
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                            isSelected ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300'
+                          }`}>
+                            BOOKING DUE ({m.dueCount})
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           
           {/* CONTROL BAR */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 border-slate-200 dark:border-slate-800">
@@ -771,7 +988,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
               </button>
             </div>
 
-            {/* Right Controls: Search & Buyer Select */}
+            {/* Right Controls: Search & Dropdowns */}
             <div className="flex items-center gap-3 flex-wrap">
               
               {/* Search */}
@@ -787,6 +1004,24 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
                   }`}
                 />
               </div>
+
+              {/* Delivery Month Dropdown Select */}
+              {monthSummaries.length > 0 && (
+                <select
+                  value={selectedMonthFilter}
+                  onChange={(e) => setSelectedMonthFilter(e.target.value)}
+                  className={`py-2 px-3 text-xs font-bold rounded-xl border outline-none cursor-pointer ${
+                    isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                >
+                  <option value="ALL">All Delivery Months ({monthSummaries.length})</option>
+                  {monthSummaries.map(m => (
+                    <option key={m.monthKey} value={m.monthKey}>
+                      {m.monthLabel} ({m.dueCount > 0 ? `${m.dueCount} Booking Due` : 'All Matched'})
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {/* Buyer Dropdown */}
               {uploadedBuyers.length > 0 && (
@@ -823,7 +1058,7 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
                   <th className="py-3 px-3 border-r border-slate-700/60">Job Number / Order No</th>
                   <th className="py-3 px-3 border-r border-slate-700/60">Store Ref (Stoe Reff.)</th>
                   <th className="py-3 px-3 text-right border-r border-slate-700/60">Order Qty (Pcs)</th>
-                  <th className="py-3 px-3 text-center border-r border-slate-700/60">CCD</th>
+                  <th className="py-3 px-3 text-center border-r border-slate-700/60">CCD / Delivery Month</th>
                   <th className="py-3 px-3 text-center border-r border-slate-700/60">Audit Status</th>
                   <th className="py-3 px-3 text-center">Action / Booking Match</th>
                 </tr>
@@ -872,8 +1107,15 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
                           {row.orderQtyPcs.toLocaleString()} Pcs
                         </td>
 
-                        <td className="py-3 px-3 text-center font-mono text-slate-500 border-r border-slate-300 dark:border-slate-800 whitespace-nowrap">
-                          {row.ccd}
+                        <td className="py-3 px-3 text-center border-r border-slate-300 dark:border-slate-800 whitespace-nowrap">
+                          <div className="inline-flex flex-col items-center">
+                            <span className="px-2 py-0.5 rounded-md font-mono text-[11px] font-black bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-2xs">
+                              {row.monthLabel || row.ccd}
+                            </span>
+                            {row.ccd && row.ccd !== '-' && row.ccd !== row.monthLabel && (
+                              <span className="text-[10px] text-slate-400 font-mono mt-0.5">{row.ccd}</span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Audit Status Badge */}
