@@ -116,13 +116,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 
   // Twill Tape State
-  const [items, setItems] = useState<TwillTapeItem[]>(() => {
-    const saved = localStorage.getItem('twill_tape_items');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return [];
-  });
+  const [items, setItems] = useState<TwillTapeItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
@@ -134,13 +128,7 @@ export default function App() {
   }, [items]);
 
   // Sewing Thread State
-  const [sewingThreadItems, setSewingThreadItems] = useState<SewingThreadItem[]>(() => {
-    const saved = localStorage.getItem('sewing_thread_items');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return [];
-  });
+  const [sewingThreadItems, setSewingThreadItems] = useState<SewingThreadItem[]>([]);
   const [isSewingLoading, setIsSewingLoading] = useState<boolean>(false);
 
   useEffect(() => {
@@ -150,90 +138,12 @@ export default function App() {
   }, [sewingThreadItems]);
 
   // Drawstring State
-  const [drawstringItems, setDrawstringItems] = useState<DrawstringItem[]>(() => {
-    const saved = localStorage.getItem('drawstring_items');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return [
-      {
-        id: 101,
-        buyer_name: 'H&M',
-        date: '2026-07-20',
-        booking_challan: 'BK-DS-01',
-        style: 'HOODIE-88',
-        order_no: 'PO-991',
-        store_ref: 'DS-201',
-        colour: 'Black',
-        drawstring_type: 'Round Drawstring',
-        size_mm: '6mm',
-        unit: 'YDS',
-        booking_qty: 2500,
-        receive_qty: 1500,
-        receive_date: '2026-07-22',
-        receive_challan: 'CH-9012',
-        issue_qty: 1000,
-        issue_date: '2026-07-22',
-        issue_challan: 'IS-401',
-        balance_qty: 1000,
-        remarks: '1st lot received',
-        receive_logs: [
-          { id: 'l1', type: 'RECEIVE', date: '2026-07-22', challan: 'CH-9012', qty: 1500, remarks: '1st lot received' }
-        ]
-      },
-      {
-        id: 102,
-        buyer_name: 'ZARA',
-        date: '2026-07-21',
-        booking_challan: 'BK-DS-02',
-        style: 'JOGGER-404',
-        order_no: 'PO-992',
-        store_ref: 'DS-202',
-        colour: 'Navy',
-        drawstring_type: 'Flat Drawstring',
-        size_mm: '10mm',
-        unit: 'YDS',
-        booking_qty: 1800,
-        receive_qty: 1800,
-        receive_date: '2026-07-23',
-        receive_challan: 'CH-9045',
-        issue_qty: 500,
-        issue_date: '2026-07-23',
-        issue_challan: 'IS-402',
-        balance_qty: 0,
-        remarks: 'Completed',
-        receive_logs: [
-          { id: 'l2', type: 'RECEIVE', date: '2026-07-23', challan: 'CH-9045', qty: 1800, remarks: 'Full delivery' }
-        ]
-      },
-      {
-        id: 103,
-        buyer_name: 'PULL & BEAR',
-        date: '2026-07-22',
-        booking_challan: 'BK-DS-03',
-        style: 'JACKET-12',
-        order_no: 'PO-993',
-        store_ref: 'DS-203',
-        colour: 'White',
-        drawstring_type: 'Braided Drawstring',
-        size_mm: '8mm',
-        unit: 'YDS',
-        booking_qty: 3000,
-        receive_qty: 0,
-        receive_date: '',
-        receive_challan: '',
-        issue_qty: 0,
-        issue_date: '',
-        issue_challan: '',
-        balance_qty: 3000,
-        remarks: 'Pending receive',
-        receive_logs: []
-      }
-    ];
-  });
+  const [drawstringItems, setDrawstringItems] = useState<DrawstringItem[]>([]);
 
   useEffect(() => {
-    localStorage.setItem('drawstring_items', JSON.stringify(drawstringItems));
+    if (drawstringItems.length > 0) {
+      localStorage.setItem('drawstring_items', JSON.stringify(drawstringItems));
+    }
   }, [drawstringItems]);
 
   const handleUpdateDrawstringItem = async (updatedItem: DrawstringItem) => {
@@ -366,62 +276,12 @@ export default function App() {
   };
 
   // Planning State
-  const [planningItems, setPlanningItems] = useState<PlanningItem[]>(() => {
-    const saved = localStorage.getItem('mcd_planning_items');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return [
-      {
-        id: 1,
-        mcd_ref: 'PLN-101',
-        buyer_name: 'H&M',
-        style: 'HOODIE-88',
-        order_no: 'PO-991',
-        item_type: 'Drawstring',
-        required_qty: 2500,
-        unit: 'YDS',
-        target_date: '2026-07-28',
-        priority: 'HIGH',
-        status: 'IN_BOOKING',
-        planner_name: 'Store Manager',
-        remarks: 'Sample approved, order placed'
-      },
-      {
-        id: 2,
-        mcd_ref: 'PLN-102',
-        buyer_name: 'ZARA',
-        style: 'JOGGER-404',
-        order_no: 'PO-992',
-        item_type: 'Twill Tape',
-        required_qty: 5000,
-        unit: 'YDS',
-        target_date: '2026-07-30',
-        priority: 'MEDIUM',
-        status: 'PLANNED',
-        planner_name: 'MCD Planner',
-        remarks: 'Booking pending approval'
-      },
-      {
-        id: 3,
-        mcd_ref: 'PLN-103',
-        buyer_name: 'PULL & BEAR',
-        style: 'JACKET-12',
-        order_no: 'PO-993',
-        item_type: 'Sewing Thread',
-        required_qty: 1200,
-        unit: 'CONES',
-        target_date: '2026-08-05',
-        priority: 'LOW',
-        status: 'PLANNED',
-        planner_name: 'MCD Planner',
-        remarks: 'Shade match in progress'
-      }
-    ];
-  });
+  const [planningItems, setPlanningItems] = useState<PlanningItem[]>([]);
 
   useEffect(() => {
-    localStorage.setItem('mcd_planning_items', JSON.stringify(planningItems));
+    if (planningItems.length > 0) {
+      localStorage.setItem('mcd_planning_items', JSON.stringify(planningItems));
+    }
   }, [planningItems]);
 
   const handleAddPlanningItem = (item: Omit<PlanningItem, 'id'>) => {
@@ -700,13 +560,6 @@ export default function App() {
   };
 
   const fetchDrawstringInventory = async () => {
-    // 1. Read local storage first
-    const savedLocal = localStorage.getItem('drawstring_items');
-    let localItems: DrawstringItem[] = [];
-    if (savedLocal) {
-      try { localItems = JSON.parse(savedLocal); } catch (e) {}
-    }
-
     try {
       const records = await fetchAllRowsFromSupabase<any>('drawstring');
       if (records && records.length > 0) {
@@ -745,68 +598,22 @@ export default function App() {
           };
         });
 
-        // 2. Smart merge: Preserve local items and local modifications
-        const mappedMap = new Map(mappedRecords.map(r => [r.id, r]));
-        const merged: DrawstringItem[] = [];
-        const itemsToSync: DrawstringItem[] = [];
-
-        for (const local of localItems) {
-          const sbItem = mappedMap.get(local.id);
-          if (!sbItem) {
-            merged.push(local);
-            itemsToSync.push(local);
-          } else {
-            const isLocalModified = 
-              local.receive_qty !== sbItem.receive_qty ||
-              local.issue_qty !== sbItem.issue_qty ||
-              local.receive_date !== sbItem.receive_date ||
-              local.issue_date !== sbItem.issue_date ||
-              local.receive_challan !== sbItem.receive_challan ||
-              local.issue_challan !== sbItem.issue_challan ||
-              local.remarks !== sbItem.remarks ||
-              (local.receive_logs && local.receive_logs.length > (sbItem.receive_logs?.length || 0)) ||
-              (local.issue_logs && local.issue_logs.length > (sbItem.issue_logs?.length || 0));
-
-            if (isLocalModified) {
-              merged.push(local);
-              itemsToSync.push(local);
-            } else {
-              merged.push(sbItem);
-            }
-            mappedMap.delete(local.id);
-          }
-        }
-        for (const remainingSb of mappedMap.values()) {
-          merged.push(remainingSb);
-        }
-
-        setDrawstringItems(merged);
-        localStorage.setItem('drawstring_items', JSON.stringify(merged));
-
-        if (itemsToSync.length > 0) {
-          syncUnsyncedDrawstring(itemsToSync);
-        }
-      } else if (localItems.length > 0) {
-        setDrawstringItems(localItems);
-        syncUnsyncedDrawstring(localItems);
+        setDrawstringItems(mappedRecords);
+        localStorage.setItem('drawstring_items', JSON.stringify(mappedRecords));
+      } else {
+        setDrawstringItems([]);
+        localStorage.removeItem('drawstring_items');
       }
     } catch (err) {
-      console.warn("Drawstring connection notice (using local state):", err);
-      if (localItems.length > 0) {
-        setDrawstringItems(localItems);
-      }
+      console.warn("Drawstring connection notice:", err);
+      setDrawstringItems([]);
+      localStorage.removeItem('drawstring_items');
     }
   };
 
   const fetchInventory = async () => {
     setIsLoading(true);
     setDbErrorMessage(null);
-
-    const savedLocal = localStorage.getItem('twill_tape_items');
-    let localItems: TwillTapeItem[] = [];
-    if (savedLocal) {
-      try { localItems = JSON.parse(savedLocal); } catch (e) {}
-    }
 
     try {
       const records = await fetchAllRowsFromSupabase<TwillTapeItem>('twill_tape');
@@ -856,63 +663,18 @@ export default function App() {
           };
         });
 
-        // Merge: keep local items and local edits that aren't in Supabase or have local edits
-        const mappedMap = new Map(mappedRecords.map(r => [r.id, r]));
-        const merged: TwillTapeItem[] = [];
-        const itemsToSync: TwillTapeItem[] = [];
-
-        for (const local of localItems) {
-          const sbItem = mappedMap.get(local.id);
-          if (!sbItem) {
-            merged.push(local);
-            itemsToSync.push(local);
-          } else {
-            const isLocalModified = 
-              local.receive_qty !== sbItem.receive_qty ||
-              local.issue_qty !== sbItem.issue_qty ||
-              local.receive_date !== sbItem.receive_date ||
-              local.issue_date !== sbItem.issue_date ||
-              local.receive_challan !== sbItem.receive_challan ||
-              local.issue_challan !== sbItem.issue_challan ||
-              local.remarks !== sbItem.remarks ||
-              (local.receive_logs && local.receive_logs.length > (sbItem.receive_logs?.length || 0)) ||
-              (local.issue_logs && local.issue_logs.length > (sbItem.issue_logs?.length || 0));
-
-            if (isLocalModified) {
-              merged.push(local);
-              itemsToSync.push(local);
-            } else {
-              merged.push(sbItem);
-            }
-            mappedMap.delete(local.id);
-          }
-        }
-        for (const remainingSb of mappedMap.values()) {
-          merged.push(remainingSb);
-        }
-
-        setItems(merged);
-        localStorage.setItem('twill_tape_items', JSON.stringify(merged));
+        setItems(mappedRecords);
+        localStorage.setItem('twill_tape_items', JSON.stringify(mappedRecords));
         setIsConnected(true);
-
-        if (itemsToSync.length > 0) {
-          syncUnsyncedTwillTape(itemsToSync);
-        }
-      } else if (localItems.length > 0) {
-        setItems(localItems);
-        setIsConnected(true);
-        syncUnsyncedTwillTape(localItems);
       } else {
+        setItems([]);
+        localStorage.removeItem('twill_tape_items');
         setIsConnected(true);
-        loadFallbackData();
       }
     } catch (err: any) {
-      console.warn("Supabase connection notice (using local state):", err?.message || err);
-      if (localItems.length > 0) {
-        setItems(localItems);
-      } else {
-        loadFallbackData();
-      }
+      console.warn("Supabase connection notice:", err?.message || err);
+      setItems([]);
+      localStorage.removeItem('twill_tape_items');
       setIsConnected(true);
     } finally {
       setIsLoading(false);
@@ -920,21 +682,12 @@ export default function App() {
   };
 
   const loadFallbackData = () => {
-    const memoryItems: TwillTapeItem[] = INITIAL_SAMPLE_DATA.map((item, idx) => ({
-      ...item,
-      id: idx + 101
-    }));
-    setItems(memoryItems);
+    setItems([]);
+    localStorage.removeItem('twill_tape_items');
   };
 
   const fetchSewingInventory = async () => {
     setIsSewingLoading(true);
-
-    const savedLocal = localStorage.getItem('sewing_thread_items');
-    let localItems: SewingThreadItem[] = [];
-    if (savedLocal) {
-      try { localItems = JSON.parse(savedLocal); } catch (e) {}
-    }
 
     try {
       const records = await fetchAllRowsFromSupabase<SewingThreadItem>('sewing_thread');
@@ -948,70 +701,24 @@ export default function App() {
           receive_challan: r.receive_challan || r.rcvd_challan || ''
         }));
 
-        const mappedMap = new Map(mappedRecords.map(r => [r.id, r]));
-        const merged: SewingThreadItem[] = [];
-        const itemsToSync: SewingThreadItem[] = [];
-
-        for (const local of localItems) {
-          const sbItem = mappedMap.get(local.id);
-          if (!sbItem) {
-            merged.push(local);
-            itemsToSync.push(local);
-          } else {
-            const isLocalModified = 
-              local.receive_qty !== sbItem.receive_qty ||
-              local.issue_qty !== sbItem.issue_qty ||
-              local.receive_date !== sbItem.receive_date ||
-              local.issue_date !== sbItem.issue_date ||
-              local.receive_challan !== sbItem.receive_challan ||
-              local.issue_challan !== sbItem.issue_challan ||
-              local.remarks !== sbItem.remarks ||
-              (local.receive_logs && local.receive_logs.length > (sbItem.receive_logs?.length || 0)) ||
-              (local.issue_logs && local.issue_logs.length > (sbItem.issue_logs?.length || 0));
-
-            if (isLocalModified) {
-              merged.push(local);
-              itemsToSync.push(local);
-            } else {
-              merged.push(sbItem);
-            }
-            mappedMap.delete(local.id);
-          }
-        }
-        for (const remainingSb of mappedMap.values()) {
-          merged.push(remainingSb);
-        }
-
-        setSewingThreadItems(merged);
-        localStorage.setItem('sewing_thread_items', JSON.stringify(merged));
-
-        if (itemsToSync.length > 0) {
-          syncUnsyncedSewingThread(itemsToSync);
-        }
-      } else if (localItems.length > 0) {
-        setSewingThreadItems(localItems);
-        syncUnsyncedSewingThread(localItems);
+        setSewingThreadItems(mappedRecords);
+        localStorage.setItem('sewing_thread_items', JSON.stringify(mappedRecords));
       } else {
-        loadSewingFallbackData();
+        setSewingThreadItems([]);
+        localStorage.removeItem('sewing_thread_items');
       }
     } catch (err) {
-      console.warn("Sewing thread connection notice (using local state):", err);
-      if (localItems.length > 0) {
-        setSewingThreadItems(localItems);
-      } else {
-        loadSewingFallbackData();
-      }
+      console.warn("Sewing thread connection notice:", err);
+      setSewingThreadItems([]);
+      localStorage.removeItem('sewing_thread_items');
     } finally {
       setIsSewingLoading(false);
     }
   };
 
   const loadSewingFallbackData = () => {
-    const memorySewingItems: SewingThreadItem[] = INITIAL_SEWING_THREAD_DATA.map((item, idx) => ({
-      ...item,
-      id: idx + 201
-    }));
-    setSewingThreadItems(memorySewingItems);
+    setSewingThreadItems([]);
+    localStorage.removeItem('sewing_thread_items');
   };
 
   // Seed Supabase Twill Tape Database
