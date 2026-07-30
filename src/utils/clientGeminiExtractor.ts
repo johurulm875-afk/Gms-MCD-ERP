@@ -42,10 +42,10 @@ Your task is to analyze the uploaded PDF Work Order / Booking Report and extract
    - Style Ref & Desc -> "style" (e.g., "12137054 - JJECORP OLD LOGO SWEAT HOOD NOOS")
 
 3. Table Line Items (Extract one JSON object per table row):
-   - Item Description -> "count" (e.g., "1 cm cotton Flat drawstring with Plastic tips Length 120 Cm")
+   - Item Description -> "count" (e.g., "40/2", "Spun Polyester Thread", "20/2", "50/2")
    - Gmts Color / Item Color -> "colour" (e.g., "LIGHT GREY MELANGE", "WHITE", "NAVY BLAZER", "PREMIUM BLACK")
-   - Item Size / Finish Length -> "meter" (e.g., "120 CM", "118 CM", "114 CM")
-   - Gmts Size -> "pantone" (e.g., "XS", "S", "M", "L", "XL", "XXL")
+   - Meter / Length / Cone Meter -> "meter" (e.g., "2000 Meter", "4000", "5000", "5000M"). Extract thread length in meters/cones. DO NOT extract "CM" values like "114 CM" or "120 CM" into meter.
+   - Pantone / Shade No -> "pantone" (e.g., "XS", "S", "19-4007 TCX", "S-102")
    - WO Qty / Booking Qty -> "booking_qty" (Extract clean numeric quantity, e.g., 20, 123, 285, 410, 308, 183)
    - Line Remarks -> "remarks" (Any row remarks if present)
 
@@ -121,8 +121,11 @@ Analyze all pages thoroughly. Extract EVERY single row in the tables into the JS
         const cleanBQty = Math.round((rawBQty + Number.EPSILON) * 100) / 100;
 
         const colorVal = (item.colour || item.color || item.gmts_color || item.item_color || '').toString().trim();
-        const countVal = (item.count || item.item_name || item.item_description || item.description || 'DRAWSTRING').toString().trim();
-        const meterVal = (item.meter || item.item_size || item.size || '114 CM').toString().trim();
+        const countVal = (item.count || item.item_name || item.item_description || item.description || '').toString().trim();
+        let meterVal = (item.meter || item.cone_meter || item.length || '').toString().trim();
+        if (meterVal.toUpperCase().includes('CM') || meterVal.toLowerCase().includes('114')) {
+          meterVal = '';
+        }
         const jobNoVal = (item.job_no || item.ref_no_job_no || '').toString().trim();
         const srGtVal = (item.sr_gt || item.sr_gt_no || item.fabric_booking_no || '').toString().trim();
         const poNoVal = (item.order_no || item.po_no || '').toString().trim();

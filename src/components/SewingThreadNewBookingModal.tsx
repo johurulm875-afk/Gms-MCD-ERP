@@ -237,7 +237,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
       supplier: headerItem.supplier || prev.supplier,
       thread_count: headerItem.count || headerItem.thread_count || prev.thread_count,
       count: headerItem.count || headerItem.thread_count || prev.count,
-      meter: headerItem.meter ? String(headerItem.meter) : prev.meter,
+      meter: (headerItem.meter && !String(headerItem.meter).toUpperCase().includes('CM') && !String(headerItem.meter).includes('114')) ? String(headerItem.meter) : prev.meter,
       per_body_consm: headerItem.per_body_consm != null ? String(headerItem.per_body_consm) : prev.per_body_consm,
       remarks: headerItem.remarks || prev.remarks
     }));
@@ -284,7 +284,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
           thread_count: tCount,
           shade_no: sNo,
           pantone: sNo,
-          meter: item.meter ? String(item.meter) : '',
+          meter: (item.meter && !String(item.meter).toUpperCase().includes('CM') && !String(item.meter).includes('114')) ? String(item.meter) : '',
           per_body_consm: item.per_body_consm != null ? String(item.per_body_consm) : '',
           supplier: item.supplier || '',
           qc_not_ok: false,
