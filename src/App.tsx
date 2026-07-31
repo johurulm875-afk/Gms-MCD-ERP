@@ -641,7 +641,7 @@ export default function App() {
 
         const finalMerged = [...extraLocal, ...mappedRecords].map((item, index) => ({
           ...item,
-          id: index + 1
+          id: (typeof item.id === 'number' && item.id > 0) ? item.id : (item.id || index + 1)
         }));
 
         setDrawstringItems(finalMerged);
@@ -904,7 +904,7 @@ export default function App() {
 
         const finalMerged = [...extraLocal, ...mappedRecords].map((item, index) => ({
           ...item,
-          id: index + 1
+          id: (typeof item.id === 'number' && item.id > 0) ? item.id : (item.id || index + 1)
         }));
 
         setSewingThreadItems(finalMerged);
@@ -1294,45 +1294,49 @@ export default function App() {
   const handleSaveQuickUpdates = async (updates: QuickUpdatePayload[]) => {
     if (!updates || updates.length === 0) return;
 
-    let updatedItemsForDb: TwillTapeItem[] = [];
+    const updatedItemsForDb: TwillTapeItem[] = [];
 
-    // 1. Instant local update
-    setItems(prev => {
-      const nextList = prev.map(item => {
-        const match = updates.find(u => u.id === item.id);
-        if (match) {
-          const updatedRecvLogs = [...(item.receive_logs || [])];
-          const updatedIssLogs = [...(item.issue_logs || [])];
+    const nextList = items.map(item => {
+      const match = updates.find(u => u.id === item.id);
+      if (match) {
+        const updatedRecvLogs = [...(item.receive_logs || [])];
+        const updatedIssLogs = [...(item.issue_logs || [])];
 
-          if (match.new_receive_log) updatedRecvLogs.push(match.new_receive_log);
-          if (match.new_receive_logs) updatedRecvLogs.push(...match.new_receive_logs);
-          if (match.new_issue_log) updatedIssLogs.push(match.new_issue_log);
-          if (match.new_issue_logs) updatedIssLogs.push(...match.new_issue_logs);
+        if (match.new_receive_log) updatedRecvLogs.push(match.new_receive_log);
+        if (match.new_receive_logs) updatedRecvLogs.push(...match.new_receive_logs);
+        if (match.new_issue_log) updatedIssLogs.push(match.new_issue_log);
+        if (match.new_issue_logs) updatedIssLogs.push(...match.new_issue_logs);
 
-          const updated = {
-            ...item,
-            receive_qty: match.receive_qty,
-            receive_date: match.receive_date,
-            receive_challan: match.receive_challan,
-            issue_qty: match.issue_qty,
-            issue_date: match.issue_date,
-            issue_challan: match.issue_challan,
-            balance_qty: match.balance_qty,
-            remarks: match.remarks !== undefined ? match.remarks : item.remarks,
-            receive_logs: updatedRecvLogs,
-            issue_logs: updatedIssLogs
-          };
-          updatedItemsForDb.push(updated);
-          return updated;
-        }
-        return item;
-      });
-      localStorage.setItem('twill_tape_items', JSON.stringify(nextList));
-      return nextList;
+        const updated = {
+          ...item,
+          receive_qty: match.receive_qty,
+          rcvd_qty: match.receive_qty,
+          receive_date: match.receive_date,
+          rcvd_date: match.receive_date,
+          receive_challan: match.receive_challan,
+          rcvd_challan: match.receive_challan,
+          issue_qty: match.issue_qty,
+          iss_qty: match.issue_qty,
+          issue_date: match.issue_date,
+          iss_date: match.issue_date,
+          issue_challan: match.issue_challan,
+          iss_challan: match.issue_challan,
+          balance_qty: match.balance_qty,
+          remarks: match.remarks !== undefined ? match.remarks : item.remarks,
+          receive_logs: updatedRecvLogs,
+          issue_logs: updatedIssLogs
+        };
+        updatedItemsForDb.push(updated);
+        return updated;
+      }
+      return item;
     });
+
+    setItems(nextList);
+    localStorage.setItem('twill_tape_items', JSON.stringify(nextList));
     showToast(`Batch updated ${updates.length} item(s) in real-time!`, "success");
 
-    // 2. Build full payload objects and upsert to Supabase
+    // Build full payload objects and upsert to Supabase
     const payloads = updatedItemsForDb.map(item => ({
       id: item.id,
       buyer_name: item.buyer_name || (item as any).buyer || '',
@@ -1374,6 +1378,8 @@ export default function App() {
         if (error) {
           console.error("Supabase upsert error (twill_tape):", error);
           showToast(`Supabase Save Error: ${error.message}`, "error");
+        } else {
+          console.log("Supabase upsert success (twill_tape):", payloads.length, "item(s)");
         }
       } catch (err: any) {
         console.warn("Notice saving twill tape quick updates:", err);
@@ -1385,45 +1391,49 @@ export default function App() {
   const handleSaveSewingQuickUpdates = async (updates: QuickUpdatePayload[]) => {
     if (!updates || updates.length === 0) return;
 
-    let updatedItemsForDb: SewingThreadItem[] = [];
+    const updatedItemsForDb: SewingThreadItem[] = [];
 
-    // 1. Instant local update
-    setSewingThreadItems(prev => {
-      const nextList = prev.map(item => {
-        const match = updates.find(u => u.id === item.id);
-        if (match) {
-          const updatedRecvLogs = [...(item.receive_logs || [])];
-          const updatedIssLogs = [...(item.issue_logs || [])];
+    const nextList = sewingThreadItems.map(item => {
+      const match = updates.find(u => u.id === item.id);
+      if (match) {
+        const updatedRecvLogs = [...(item.receive_logs || [])];
+        const updatedIssLogs = [...(item.issue_logs || [])];
 
-          if (match.new_receive_log) updatedRecvLogs.push(match.new_receive_log);
-          if (match.new_receive_logs) updatedRecvLogs.push(...match.new_receive_logs);
-          if (match.new_issue_log) updatedIssLogs.push(match.new_issue_log);
-          if (match.new_issue_logs) updatedIssLogs.push(...match.new_issue_logs);
+        if (match.new_receive_log) updatedRecvLogs.push(match.new_receive_log);
+        if (match.new_receive_logs) updatedRecvLogs.push(...match.new_receive_logs);
+        if (match.new_issue_log) updatedIssLogs.push(match.new_issue_log);
+        if (match.new_issue_logs) updatedIssLogs.push(...match.new_issue_logs);
 
-          const updated = {
-            ...item,
-            receive_qty: match.receive_qty,
-            receive_date: match.receive_date,
-            receive_challan: match.receive_challan,
-            issue_qty: match.issue_qty,
-            issue_date: match.issue_date,
-            issue_challan: match.issue_challan,
-            balance_qty: match.balance_qty,
-            remarks: match.remarks !== undefined ? match.remarks : item.remarks,
-            receive_logs: updatedRecvLogs,
-            issue_logs: updatedIssLogs
-          };
-          updatedItemsForDb.push(updated);
-          return updated;
-        }
-        return item;
-      });
-      localStorage.setItem('sewing_thread_items', JSON.stringify(nextList));
-      return nextList;
+        const updated = {
+          ...item,
+          receive_qty: match.receive_qty,
+          rcvd_qty: match.receive_qty,
+          receive_date: match.receive_date,
+          rcvd_date: match.receive_date,
+          receive_challan: match.receive_challan,
+          rcvd_challan: match.receive_challan,
+          issue_qty: match.issue_qty,
+          iss_qty: match.issue_qty,
+          issue_date: match.issue_date,
+          iss_date: match.issue_date,
+          issue_challan: match.issue_challan,
+          iss_challan: match.issue_challan,
+          balance_qty: match.balance_qty,
+          remarks: match.remarks !== undefined ? match.remarks : item.remarks,
+          receive_logs: updatedRecvLogs,
+          issue_logs: updatedIssLogs
+        };
+        updatedItemsForDb.push(updated);
+        return updated;
+      }
+      return item;
     });
+
+    setSewingThreadItems(nextList);
+    localStorage.setItem('sewing_thread_items', JSON.stringify(nextList));
     showToast(`Batch updated ${updates.length} sewing thread item(s)!`, "success");
 
-    // 2. Build full payload objects and upsert to Supabase
+    // Build full payload objects and upsert to Supabase
     const payloads = updatedItemsForDb.map(item => ({
       id: item.id,
       buyer_name: item.buyer_name || item.buyer || '',
@@ -1447,13 +1457,17 @@ export default function App() {
       supplier: item.supplier || '',
       booking_qty: Number(item.booking_qty) || 0,
       receive_qty: Number(item.receive_qty) || 0,
+      rcvd_qty: Number(item.receive_qty) || 0,
       rcvd_date: item.receive_date || item.rcvd_date || '',
       receive_date: item.receive_date || item.rcvd_date || '',
       rcvd_challan: item.receive_challan || item.rcvd_challan || '',
       receive_challan: item.receive_challan || item.rcvd_challan || '',
       issue_qty: Number(item.issue_qty) || 0,
-      issue_date: item.issue_date || '',
-      issue_challan: item.issue_challan || '',
+      iss_qty: Number(item.issue_qty) || 0,
+      issue_date: item.issue_date || item.iss_date || '',
+      iss_date: item.issue_date || item.iss_date || '',
+      issue_challan: item.issue_challan || item.iss_challan || '',
+      iss_challan: item.issue_challan || item.iss_challan || '',
       balance_qty: Number(item.balance_qty) || 0,
       remarks: item.remarks || '',
       receive_logs: item.receive_logs || [],
@@ -1466,9 +1480,16 @@ export default function App() {
         if (error) {
           console.error("Supabase upsert error (sewing_thread):", error);
           showToast(`Supabase Save Error: ${error.message}`, "error");
+        } else {
+          console.log("Supabase upsert success (sewing_thread):", payloads.length, "item(s)");
         }
       } catch (err: any) {
         console.warn("Notice saving sewing thread quick updates:", err);
+      }
+      try {
+        await supabase.from('supabase_sewing_thread_all_rows').upsert(payloads);
+      } catch (e) {
+        // optional
       }
     }
   };
