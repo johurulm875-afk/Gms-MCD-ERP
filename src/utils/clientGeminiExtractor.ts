@@ -77,61 +77,74 @@ Extract ALL individual table rows into a JSON Array.
 `;
 
   const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash'];
     let response: any = null;
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {
-      try {
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: chunkBase64,
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: chunkBase64,
+                },
               },
-            },
-            {
-              text: promptText,
-            },
-          ],
-          config: {
-            maxOutputTokens: 8192,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  buyer: { type: Type.STRING },
-                  booking_date: { type: Type.STRING },
-                  job_no: { type: Type.STRING },
-                  sr_gt: { type: Type.STRING },
-                  order_no: { type: Type.STRING },
-                  s_thread_ref: { type: Type.STRING },
-                  style: { type: Type.STRING },
-                  count: { type: Type.STRING },
-                  colour: { type: Type.STRING },
-                  item_color: { type: Type.STRING },
-                  meter: { type: Type.STRING },
-                  pantone: { type: Type.STRING },
-                  order_qty: { type: Type.NUMBER },
-                  booking_qty: { type: Type.NUMBER },
-                  supplier: { type: Type.STRING },
-                  remarks: { type: Type.STRING },
+              {
+                text: promptText,
+              },
+            ],
+            config: {
+              maxOutputTokens: 8192,
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    buyer: { type: Type.STRING },
+                    booking_date: { type: Type.STRING },
+                    job_no: { type: Type.STRING },
+                    sr_gt: { type: Type.STRING },
+                    order_no: { type: Type.STRING },
+                    s_thread_ref: { type: Type.STRING },
+                    style: { type: Type.STRING },
+                    count: { type: Type.STRING },
+                    colour: { type: Type.STRING },
+                    item_color: { type: Type.STRING },
+                    meter: { type: Type.STRING },
+                    pantone: { type: Type.STRING },
+                    order_qty: { type: Type.NUMBER },
+                    booking_qty: { type: Type.NUMBER },
+                    supplier: { type: Type.STRING },
+                    remarks: { type: Type.STRING },
+                  },
                 },
               },
             },
-          },
-        });
+          });
 
-        if (response && response.text) {
-          break;
+          if (response && response.text) {
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errStr = String(err?.message || err);
+          const isRateLimit = errStr.includes('429') || errStr.includes('quota') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('rate-limit');
+          if (isRateLimit && attempt < 2) {
+            console.warn(`[Client PDF Extractor] Rate limited on ${modelName} (attempt ${attempt + 1}). Waiting 7 seconds before retrying...`);
+            await new Promise(r => setTimeout(r, 7000));
+          } else {
+            console.warn(`Client Gemini model ${modelName} failed/busy:`, err);
+            break;
+          }
         }
-      } catch (err: any) {
-        console.warn(`Client Gemini model ${modelName} failed/busy:`, err);
-        lastError = err;
+      }
+      if (response && response.text) {
+        break;
       }
     }
 
@@ -156,8 +169,8 @@ Extract ALL individual table rows into a JSON Array.
     if (totalPages === 1) {
       rawItems = await extractChunk(cleanBase64);
     } else {
-      console.log(`[Client PDF Extractor] Processing ${totalPages} pages in 2-page chunks...`);
-      const PAGES_PER_CHUNK = 2;
+      console.log(`[Client PDF Extractor] Processing ${totalPages} pages in 5-page chunks...`);
+      const PAGES_PER_CHUNK = 5;
       for (let i = 0; i < totalPages; i += PAGES_PER_CHUNK) {
         const endPage = Math.min(i + PAGES_PER_CHUNK, totalPages);
         const subDoc = await PDFDocument.create();
@@ -171,6 +184,10 @@ Extract ALL individual table rows into a JSON Array.
         const chunkResult = await extractChunk(subBase64);
         if (Array.isArray(chunkResult)) {
           rawItems.push(...chunkResult);
+        }
+
+        if (endPage < totalPages) {
+          await new Promise(r => setTimeout(r, 1200));
         }
       }
     }
