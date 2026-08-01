@@ -119,29 +119,56 @@ Extract ALL individual color breakdown table rows into a JSON Array.
         contentItems.push({ type: 'image_url', image_url: { url: urlStr } });
       }
 
-      const openRouterRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openRouterKey}`,
-          'HTTP-Referer': 'https://ai.studio',
-          'X-Title': 'Garments Sewing Thread Manager',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: openRouterModel || 'qwen/qwen-2.5-vl-72b-instruct:free',
-          messages: [{ role: 'user', content: contentItems }]
-        })
-      });
+      const openRouterModelsToTry = Array.from(new Set([
+        openRouterModel,
+        'qwen/qwen-2.5-vl-72b-instruct',
+        'qwen/qwen-2.5-vl-72b-instruct:free',
+        'qwen/qwen-2-vl-72b-instruct',
+        'meta-llama/llama-3.2-11b-vision-instruct:free',
+        'google/gemini-2.0-flash-exp:free'
+      ])).filter(Boolean);
 
-      if (!openRouterRes.ok) {
-        const errText = await openRouterRes.text();
-        return res.status(openRouterRes.status).json({
+      let openRouterRes: any = null;
+      let lastOpenRouterErr: string = '';
+
+      for (const mName of openRouterModelsToTry) {
+        console.log(`[OpenRouter Extractor] Trying model ${mName}...`);
+        try {
+          const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openRouterKey}`,
+              'HTTP-Referer': 'https://ai.studio',
+              'X-Title': 'Garments Sewing Thread Manager',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: mName,
+              messages: [{ role: 'user', content: contentItems }]
+            })
+          });
+
+          if (response.ok) {
+            openRouterRes = await response.json();
+            break;
+          } else {
+            const errText = await response.text();
+            lastOpenRouterErr = `OpenRouter (${mName}) Error (${response.status}): ${errText}`;
+            console.warn(`[OpenRouter Extractor] Model ${mName} failed with ${response.status}. Trying next fallback...`);
+          }
+        } catch (fetchErr: any) {
+          lastOpenRouterErr = fetchErr?.message || String(fetchErr);
+        }
+      }
+
+      if (!openRouterRes) {
+        return res.status(400).json({
           success: false,
-          error: `OpenRouter API Error (${openRouterRes.status}): ${errText}`
+          error: lastOpenRouterErr || 'Failed to extract with OpenRouter models. Please verify API Key.'
         });
       }
 
-      const orData = await openRouterRes.json();
+      const orData = openRouterRes;
       const rawText = orData?.choices?.[0]?.message?.content || '';
       const jsonMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
       let rawItems: any[] = [];

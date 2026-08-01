@@ -85,26 +85,49 @@ Extract ALL individual color breakdown table rows into a JSON Array.
       contentItems.push({ type: 'image_url', image_url: { url: u } });
     }
 
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openRouterKey}`,
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'Sewing Thread Manager',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: openRouterModel || 'qwen/qwen-2.5-vl-72b-instruct:free',
-        messages: [{ role: 'user', content: contentItems }]
-      })
-    });
+    const openRouterModelsToTry = Array.from(new Set([
+      openRouterModel,
+      'qwen/qwen-2.5-vl-72b-instruct',
+      'qwen/qwen-2.5-vl-72b-instruct:free',
+      'qwen/qwen-2-vl-72b-instruct',
+      'meta-llama/llama-3.2-11b-vision-instruct:free',
+      'google/gemini-2.0-flash-exp:free'
+    ])).filter(Boolean);
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`OpenRouter Error (${res.status}): ${errText}`);
+    let json: any = null;
+    let lastErrText = '';
+
+    for (const mName of openRouterModelsToTry) {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openRouterKey}`,
+            'HTTP-Referer': window.location.origin,
+            'X-Title': 'Sewing Thread Manager',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: mName,
+            messages: [{ role: 'user', content: contentItems }]
+          })
+        });
+
+        if (res.ok) {
+          json = await res.json();
+          break;
+        } else {
+          lastErrText = await res.text();
+          console.warn(`[Client OpenRouter Extractor] Model ${mName} returned ${res.status}. Retrying fallback...`);
+        }
+      } catch (err: any) {
+        lastErrText = err?.message || String(err);
+      }
     }
 
-    const json = await res.json();
+    if (!json) {
+      throw new Error(`OpenRouter Error: ${lastErrText || 'All OpenRouter models failed. Check your API key or connection.'}`);
+    }
     const txt = json?.choices?.[0]?.message?.content || '';
     const match = txt.match(/\[\s*\{[\s\S]*\}\s*\]/);
     let rawItems: any[] = [];
