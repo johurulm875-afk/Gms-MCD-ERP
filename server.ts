@@ -95,7 +95,7 @@ Extract ALL individual table rows into a JSON Array.
 
     // Function to extract items from a single base64 chunk
     const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-      const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest'];
+      const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash'];
       let response: any = null;
       let lastError: any = null;
 
