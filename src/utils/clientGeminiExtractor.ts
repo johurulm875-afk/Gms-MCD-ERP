@@ -40,18 +40,19 @@ You are an expert Data Extraction AI for Garments Sewing Thread / Trims Booking 
 Your task is to analyze the uploaded PDF Work Order / Booking Report page(s) and extract EVERY SINGLE individual booking table line item.
 
 CRITICAL EXTRACTION RULES (STRICT LINE-BY-LINE PER ROW):
-1. ABSOLUTELY NO MERGING / NO COMBINING / NO AGGREGATION:
+1. IGNORE SUMMARY / GRAND TOTAL / RECAP TABLES AT THE END OF PDF:
+   - Garments PDF Work Orders have a SUMMARY / RECAP table at the end listing items like "Item 7: (40/2; 100% Spun Polyester) Total Cones: 4624" with multiple comma-separated Job Nos. YOU MUST IGNORE AND SKIP THIS SUMMARY TABLE COMPLETELY. DO NOT EXTRACT IT.
+   - NEVER extract rows where Garment Color is a number like "7" or "1", or where Job No is a comma-separated list of multiple jobs.
+
+2. EXTRACT ONLY DETAILED COLOR BREAKDOWN ROWS:
+   - Extract ONLY from the detailed Job/PO breakdown tables in pages 1 to N where each section has ONE SINGLE Job No (e.g. "GMST-26-01630"), ONE SINGLE PO No (e.g. "12298993"), and individual Garment Colors (e.g. "PREMIUM BLACK", "MOONBEAM", "PINK-A-BOO", etc.).
    - DO NOT combine multiple Job Nos, PO Nos, or Styles into comma-separated strings (e.g. DO NOT write "GMST-26-01630, GMST-26-01631").
    - DO NOT combine quantities across different POs or colors into 1 summary object.
    - Each Job section in the PDF has its OWN single Job No (e.g. "GMST-26-01630"), its OWN single PO No (e.g. "12298993"), and its OWN single Style.
-   - Each row inside the table is for a specific Garments Color / Item Color.
 
-2. MANDATORY INDIVIDUAL ROW EXTRACTION:
+3. MANDATORY INDIVIDUAL ROW EXTRACTION:
    - Extract EVERY SINGLE table row in EVERY Job/PO section as an individual JSON object in the array.
    - Every single line item for every color must have its own JSON object containing its exact \`job_no\`, \`order_no\`, \`style\`, \`colour\`, \`item_color\`, \`count\`, \`meter\`, and numeric \`booking_qty\`.
-
-3. IGNORE SUMMARY / GRAND TOTAL TABLES:
-   - Ignore any overall summary table at the end or top that aggregates total cones across all jobs. Extract ONLY the detailed line-item table rows from each Job/PO breakdown section.
 
 4. HIERARCHICAL FIELD EXTRACTION FOR EACH ROW:
    - Header Info:
@@ -73,16 +74,30 @@ CRITICAL EXTRACTION RULES (STRICT LINE-BY-LINE PER ROW):
      * Cone Length / Meter -> "meter" (e.g. "4000")
      * Line Remarks -> "remarks" (Any row remarks or "0")
 
-Extract ALL individual table rows into a JSON Array.
+Extract ALL individual color breakdown table rows into a JSON Array.
 `;
 
+  const isRateLimitError = (err: any): boolean => {
+    if (!err) return false;
+    const errStr = String(err?.message || err).toLowerCase();
+    return (
+      errStr.includes('429') ||
+      errStr.includes('quota') ||
+      errStr.includes('resource_exhausted') ||
+      errStr.includes('rate limit') ||
+      errStr.includes('rate-limit') ||
+      errStr.includes('free tier') ||
+      errStr.includes('limit reached')
+    );
+  };
+
   const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-    const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest'];
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
     let response: any = null;
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
           response = await ai.models.generateContent({
             model: modelName,
@@ -132,16 +147,16 @@ Extract ALL individual table rows into a JSON Array.
           }
         } catch (err: any) {
           lastError = err;
-          const errStr = String(err?.message || err);
-          const isRateLimit = errStr.includes('429') || errStr.includes('quota') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('rate-limit');
-          if (isRateLimit && attempt < 2) {
-            console.warn(`[Client PDF Extractor] Rate limited on ${modelName} (attempt ${attempt + 1}). Waiting 7 seconds before retrying...`);
-            await new Promise(r => setTimeout(r, 7000));
-          } else if (attempt < 2) {
-            console.warn(`Client Gemini model ${modelName} attempt ${attempt + 1} failed (${errStr}), retrying in 2s...`);
-            await new Promise(r => setTimeout(r, 2000));
+          if (isRateLimitError(err)) {
+            if (attempt === 0) {
+              console.warn(`[Client PDF Extractor] Rate limited on ${modelName}. Waiting 5s...`);
+              await new Promise(r => setTimeout(r, 5000));
+            } else {
+              console.warn(`[Client PDF Extractor] Gemini API quota limit on ${modelName}, trying fallback model...`);
+              break;
+            }
           } else {
-            console.warn(`Client Gemini model ${modelName} failed after 3 attempts (${errStr}), trying fallback model...`);
+            console.warn(`Client Gemini model ${modelName} error (${err?.message || err}), trying next attempt/model...`);
             break;
           }
         }
@@ -152,6 +167,9 @@ Extract ALL individual table rows into a JSON Array.
     }
 
     if (!response || !response.text) {
+      if (isRateLimitError(lastError)) {
+        throw new Error("Gemini API free tier rate limit reached (429). Please wait 15–30 seconds before retrying.");
+      }
       throw lastError || new Error("Failed to extract PDF data using Gemini AI.");
     }
 
@@ -169,84 +187,106 @@ Extract ALL individual table rows into a JSON Array.
     const pdfDoc = await PDFDocument.load(uint8Bytes, { ignoreEncryption: true });
     const totalPages = pdfDoc.getPageCount();
 
-    if (totalPages === 1) {
+    console.log(`[Client PDF Extractor] PDF loaded with ${totalPages} pages. Extracting in single call...`);
+    try {
       rawItems = await extractChunk(cleanBase64);
-    } else {
-      console.log(`[Client PDF Extractor] Processing ${totalPages} pages in 5-page chunks...`);
-      const PAGES_PER_CHUNK = 5;
-      for (let i = 0; i < totalPages; i += PAGES_PER_CHUNK) {
-        const endPage = Math.min(i + PAGES_PER_CHUNK, totalPages);
-        const subDoc = await PDFDocument.create();
-        const pageIndices = [];
-        for (let j = i; j < endPage; j++) {
-          pageIndices.push(j);
-        }
-        const copiedPages = await subDoc.copyPages(pdfDoc, pageIndices);
-        copiedPages.forEach(p => subDoc.addPage(p));
-        const subBase64 = await subDoc.saveAsBase64();
-        const chunkResult = await extractChunk(subBase64);
-        if (Array.isArray(chunkResult)) {
-          rawItems.push(...chunkResult);
-        }
+      console.log(`[Client PDF Extractor] Single-call extraction successful: extracted ${rawItems.length} items.`);
+    } catch (singleCallErr: any) {
+      if (isRateLimitError(singleCallErr)) {
+        throw singleCallErr;
+      }
 
-        if (endPage < totalPages) {
-          await new Promise(r => setTimeout(r, 1200));
+      if (totalPages > 1) {
+        console.warn(`[Client PDF Extractor] Single-call extraction failed (${singleCallErr?.message || singleCallErr}). Falling back to 10-page chunking...`);
+        const PAGES_PER_CHUNK = 10;
+        for (let i = 0; i < totalPages; i += PAGES_PER_CHUNK) {
+          const endPage = Math.min(i + PAGES_PER_CHUNK, totalPages);
+          const subDoc = await PDFDocument.create();
+          const pageIndices = [];
+          for (let j = i; j < endPage; j++) {
+            pageIndices.push(j);
+          }
+          const copiedPages = await subDoc.copyPages(pdfDoc, pageIndices);
+          copiedPages.forEach(p => subDoc.addPage(p));
+          const subBase64 = await subDoc.saveAsBase64();
+          const chunkResult = await extractChunk(subBase64);
+          if (Array.isArray(chunkResult)) {
+            rawItems.push(...chunkResult);
+          }
+
+          if (endPage < totalPages) {
+            await new Promise(r => setTimeout(r, 2000));
+          }
         }
+      } else {
+        throw singleCallErr;
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (isRateLimitError(err)) {
+      throw err;
+    }
     console.warn("Client pdf-lib chunking failed, extracting full document:", err);
     rawItems = await extractChunk(cleanBase64);
   }
 
   let parsedData: any[] = [];
   if (Array.isArray(rawItems)) {
-    parsedData = rawItems.map((item: any) => {
-      const rawBQty = Number(item.booking_qty || item.wo_qty || item.order_qty) || 0;
-      const cleanBQty = Math.round((rawBQty + Number.EPSILON) * 100) / 100;
+    parsedData = rawItems
+      .map((item: any) => {
+        const rawBQty = Number(item.booking_qty || item.wo_qty || item.order_qty) || 0;
+        const cleanBQty = Math.round((rawBQty + Number.EPSILON) * 100) / 100;
 
-      const colorVal = (item.colour || item.color || item.gmts_color || item.item_color || '').toString().trim();
-      const countVal = (item.count || item.item_name || item.item_description || item.description || '').toString().trim();
-      let meterVal = (item.meter || item.cone_meter || item.length || '').toString().trim();
-      if (meterVal.toUpperCase().includes('CM') || meterVal.toLowerCase().includes('114')) {
-        meterVal = '';
-      }
-      const jobNoVal = (item.job_no || item.ref_no_job_no || '').toString().trim();
-      const srGtVal = (item.sr_gt || item.sr_gt_no || item.fabric_booking_no || '').toString().trim();
-      const poNoVal = (item.order_no || item.po_no || '').toString().trim();
-      const buyerVal = (item.buyer || item.buyer_name || 'BESTSELLER A/S').toString().trim();
-      const storeRefVal = (item.s_thread_ref || item.store_ref || item.booking_no || '').toString().trim();
+        const colorVal = (item.colour || item.color || item.gmts_color || item.item_color || '').toString().trim();
+        const countVal = (item.count || item.item_name || item.item_description || item.description || '').toString().trim();
+        let meterVal = (item.meter || item.cone_meter || item.length || '').toString().trim();
+        if (meterVal.toUpperCase().includes('CM') || meterVal.toLowerCase().includes('114')) {
+          meterVal = '';
+        }
+        const jobNoVal = (item.job_no || item.ref_no_job_no || '').toString().trim();
+        const srGtVal = (item.sr_gt || item.sr_gt_no || item.fabric_booking_no || '').toString().trim();
+        const poNoVal = (item.order_no || item.po_no || '').toString().trim();
+        const buyerVal = (item.buyer || item.buyer_name || 'BESTSELLER A/S').toString().trim();
+        const storeRefVal = (item.s_thread_ref || item.store_ref || item.booking_no || '').toString().trim();
 
-      return {
-        buyer: buyerVal,
-        buyer_name: buyerVal,
-        booking_date: item.booking_date || item.date || '',
-        job_no: jobNoVal,
-        ref_no_job_no: jobNoVal,
-        sr_gt: srGtVal,
-        sr_gt_no: srGtVal,
-        order_no: poNoVal,
-        po_no: poNoVal,
-        s_thread_ref: storeRefVal,
-        store_ref: storeRefVal,
-        style: item.style || '',
-        count: countVal,
-        item_name: countVal,
-        colour: colorVal,
-        color: colorVal,
-        meter: meterVal,
-        size: meterVal,
-        pantone: item.pantone || item.gmts_size || '',
-        booking_qty: cleanBQty,
-        wo_qty: cleanBQty,
-        balance_qty: cleanBQty,
-        due_qty: cleanBQty,
-        receive_qty: 0,
-        issue_qty: 0,
-        supplier: item.supplier || '',
-        remarks: item.remarks || ''
-      };
-    });
+        return {
+          buyer: buyerVal,
+          buyer_name: buyerVal,
+          booking_date: item.booking_date || item.date || '',
+          job_no: jobNoVal,
+          ref_no_job_no: jobNoVal,
+          sr_gt: srGtVal,
+          sr_gt_no: srGtVal,
+          order_no: poNoVal,
+          po_no: poNoVal,
+          s_thread_ref: storeRefVal,
+          store_ref: storeRefVal,
+          style: item.style || '',
+          count: countVal,
+          item_name: countVal,
+          colour: colorVal,
+          color: colorVal,
+          meter: meterVal,
+          size: meterVal,
+          pantone: item.pantone || item.gmts_size || '',
+          booking_qty: cleanBQty,
+          wo_qty: cleanBQty,
+          balance_qty: cleanBQty,
+          due_qty: cleanBQty,
+          receive_qty: 0,
+          issue_qty: 0,
+          supplier: item.supplier || '',
+          remarks: item.remarks || ''
+        };
+      })
+      .filter((item: any) => {
+        const col = item.colour.toUpperCase();
+        const job = item.job_no;
+        if (/^\d+$/.test(col)) return false;
+        if (col.includes('TOTAL') || col.includes('SUMMARY') || col.includes('RECAP') || col.includes('GRAND')) return false;
+        if (job.includes(',')) return false;
+        return col.length > 0 && item.booking_qty > 0;
+      });
   }
 
   return parsedData;

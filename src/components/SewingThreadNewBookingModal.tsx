@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { SewingThreadItem } from '../types';
-import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle, Upload, FileText, Loader2, ArrowRight, Key } from 'lucide-react';
+import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle, Upload, FileText, Loader2, ArrowRight, Key, RefreshCw } from 'lucide-react';
 import { extractPdfClientSide } from '../utils/clientGeminiExtractor';
 
 interface SewingThreadNewBookingModalProps {
@@ -85,6 +85,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [extractedItems, setExtractedItems] = useState<any[] | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
+  const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
   const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
   const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -143,6 +144,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
       return;
     }
 
+    setLastUploadedFile(file);
     setIsAnalyzingPdf(true);
     setPdfError(null);
     setExtractedItems(null);
@@ -161,18 +163,36 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
             const res = await fetch('/api/extract-sewing-thread-pdf', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf' })
+              body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf', apiKey: userApiKey || undefined })
             });
 
             const rawText = await res.text();
-            if (res.ok && rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
-              const data = JSON.parse(rawText);
-              if (data.success && Array.isArray(data.data)) {
-                items = data.data;
-                isBackendSuccess = true;
+            if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
+              try {
+                const data = JSON.parse(rawText);
+                if (res.ok && data.success && Array.isArray(data.data)) {
+                  items = data.data;
+                  isBackendSuccess = true;
+                } else if (!res.ok && data.error) {
+                  // If backend gave an explicit API or rate-limit error, throw it directly
+                  const errMessage = String(data.error);
+                  if (res.status === 429 || errMessage.includes('429') || errMessage.includes('quota') || errMessage.includes('RESOURCE_EXHAUSTED')) {
+                    throw new Error(errMessage || "Gemini API rate limit / quota exceeded (429). Please wait 15–30 seconds before retrying or enter your custom Gemini API key below.");
+                  } else if (res.status !== 404) {
+                    throw new Error(errMessage);
+                  }
+                }
+              } catch (parseErr: any) {
+                if (parseErr.message && (parseErr.message.includes('429') || parseErr.message.includes('quota') || parseErr.message.includes('rate limit'))) {
+                  throw parseErr;
+                }
               }
             }
-          } catch (backendErr) {
+          } catch (backendErr: any) {
+            const errStr = String(backendErr?.message || backendErr);
+            if (errStr.includes('429') || errStr.includes('quota') || errStr.includes('rate limit')) {
+              throw backendErr; // Don't fallback to client-side if rate limited
+            }
             console.warn("Backend API not reachable (GitHub Pages / static host), falling back to client-side extraction:", backendErr);
           }
 
@@ -189,10 +209,18 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
           }
         } catch (err: any) {
           console.error("PDF Extraction Error:", err);
-          if (err.message?.includes("Gemini API Key")) {
+          const msg = String(err?.message || err);
+          if (
+            msg.includes("Gemini API Key") ||
+            msg.includes("429") ||
+            msg.includes("quota") ||
+            msg.includes("rate limit") ||
+            msg.includes("RESOURCE_EXHAUSTED") ||
+            msg.includes("free tier")
+          ) {
             setShowApiKeyInput(true);
           }
-          setPdfError(err.message || "An error occurred while parsing PDF.");
+          setPdfError(msg || "An error occurred while parsing PDF.");
         } finally {
           setIsAnalyzingPdf(false);
         }
@@ -593,11 +621,24 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
               </div>
             )}
 
-            {/* Error Message */}
+            {/* Error Message with Interactive Retry */}
             {pdfError && (
-              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-xs text-rose-200 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{pdfError}</span>
+              <div className="p-3 bg-rose-500/20 border border-rose-500/40 rounded-xl text-xs text-rose-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{pdfError}</span>
+                </div>
+                {lastUploadedFile && (
+                  <button
+                    type="button"
+                    disabled={isAnalyzingPdf}
+                    onClick={() => handlePdfUpload(lastUploadedFile)}
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzingPdf ? 'animate-spin' : ''}`} />
+                    <span>{isAnalyzingPdf ? 'Retrying...' : 'Retry Parsing PDF'}</span>
+                  </button>
+                )}
               </div>
             )}
 
