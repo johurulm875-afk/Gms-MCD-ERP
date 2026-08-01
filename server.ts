@@ -108,9 +108,15 @@ Extract ALL individual color breakdown table rows into a JSON Array.
       );
     };
 
+    const isUnavailableError = (err: any): boolean => {
+      if (!err) return false;
+      const errStr = String(err?.message || err).toLowerCase();
+      return errStr.includes('503') || errStr.includes('unavailable') || errStr.includes('high demand');
+    };
+
     // Function to extract items from a single base64 chunk with rate limit protection
     const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-      const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
+      const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
       let response: any = null;
       let lastError: any = null;
 
@@ -167,11 +173,19 @@ Extract ALL individual color breakdown table rows into a JSON Array.
             lastError = err;
             if (isRateLimitError(err)) {
               if (attempt === 0) {
-                console.warn(`[PDF Extractor] Rate limited on ${modelName}. Waiting 5s for quota reset...`);
-                await new Promise(r => setTimeout(r, 5000));
+                console.warn(`[PDF Extractor] Rate limited on ${modelName}. Waiting 4s for quota reset...`);
+                await new Promise(r => setTimeout(r, 4000));
               } else {
                 console.warn(`[PDF Extractor] Gemini API quota limit on ${modelName}, trying fallback model...`);
                 break; // Try next model in list
+              }
+            } else if (isUnavailableError(err)) {
+              if (attempt === 0) {
+                console.warn(`[PDF Extractor] Model ${modelName} high demand (503). Retrying in 2s...`);
+                await new Promise(r => setTimeout(r, 2000));
+              } else {
+                console.warn(`[PDF Extractor] Model ${modelName} unavailable, trying fallback model...`);
+                break;
               }
             } else {
               console.warn(`Model ${modelName} error (${err?.message || err}), trying next attempt/model...`);

@@ -91,8 +91,14 @@ Extract ALL individual color breakdown table rows into a JSON Array.
     );
   };
 
+  const isUnavailableError = (err: any): boolean => {
+    if (!err) return false;
+    const errStr = String(err?.message || err).toLowerCase();
+    return errStr.includes('503') || errStr.includes('unavailable') || errStr.includes('high demand');
+  };
+
   const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-    const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
     let response: any = null;
     let lastError: any = null;
 
@@ -149,10 +155,18 @@ Extract ALL individual color breakdown table rows into a JSON Array.
           lastError = err;
           if (isRateLimitError(err)) {
             if (attempt === 0) {
-              console.warn(`[Client PDF Extractor] Rate limited on ${modelName}. Waiting 5s...`);
-              await new Promise(r => setTimeout(r, 5000));
+              console.warn(`[Client PDF Extractor] Rate limited on ${modelName}. Waiting 4s...`);
+              await new Promise(r => setTimeout(r, 4000));
             } else {
               console.warn(`[Client PDF Extractor] Gemini API quota limit on ${modelName}, trying fallback model...`);
+              break;
+            }
+          } else if (isUnavailableError(err)) {
+            if (attempt === 0) {
+              console.warn(`[Client PDF Extractor] Model ${modelName} high demand (503). Retrying in 2s...`);
+              await new Promise(r => setTimeout(r, 2000));
+            } else {
+              console.warn(`[Client PDF Extractor] Model ${modelName} unavailable, trying fallback model...`);
               break;
             }
           } else {
