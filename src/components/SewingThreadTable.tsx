@@ -602,7 +602,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredItems.map(item => {
+                filteredItems.map((item, idx) => {
                   const isPending = (item.booking_qty > 0 && (item.receive_qty || 0) === 0);
                   const isFulfilled = (item.balance_qty <= 0 || (item.receive_qty || 0) >= item.booking_qty);
 
@@ -611,7 +611,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
                     (isFulfilled ? 'border-l-emerald-500' : isPending ? 'border-l-amber-500' : 'border-l-blue-500');
 
                   return (
-                    <tr key={item.id} className={`${rowStyle} transition-colors hover:bg-slate-50/80`}>
+                    <tr key={`${item.id}_${idx}`} className={`${rowStyle} transition-colors hover:bg-slate-50/80`}>
                       <td className="py-2.5 px-2 font-mono font-bold text-slate-600 border border-slate-300 dark:border-slate-700">{item.id}</td>
                       <td className="py-2.5 px-2 font-extrabold whitespace-nowrap text-slate-900 border border-slate-300 dark:border-slate-700">{item.buyer_name || item.buyer || '-'}</td>
                       <td className="py-2.5 px-2 font-mono text-slate-700 whitespace-nowrap border border-slate-300 dark:border-slate-700">{item.job_no || '-'}</td>

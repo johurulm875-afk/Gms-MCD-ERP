@@ -374,7 +374,7 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-semibold">
-              {filtered.map((item) => {
+              {filtered.map((item, idx) => {
                 let priorityBadge = 'bg-slate-500/10 text-slate-600 border-slate-500/30';
                 if (item.priority === 'HIGH') priorityBadge = 'bg-rose-500/10 text-rose-600 border-rose-500/30 font-black';
                 if (item.priority === 'MEDIUM') priorityBadge = 'bg-amber-500/10 text-amber-600 border-amber-500/30';
@@ -386,7 +386,7 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
                 if (item.status === 'IN_BOOKING') statusBadge = 'bg-amber-500/10 text-amber-600 border-amber-500/30';
 
                 return (
-                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr key={`${item.id}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="py-2.5 px-3 font-mono font-bold text-violet-600 dark:text-violet-400">{item.mcd_ref || `PLN-${item.id}`}</td>
                     <td className="py-2.5 px-3 font-extrabold text-slate-900 dark:text-white">{item.buyer_name}</td>
                     <td className="py-2.5 px-3 font-bold">{item.style} <span className="text-[10px] text-slate-400 block font-normal">{item.order_no}</span></td>

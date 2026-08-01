@@ -2558,9 +2558,9 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                      {filteredSewingQcNotOk.map((item) => (
+                      {filteredSewingQcNotOk.map((item, idx) => (
                         <tr 
-                          key={item.id}
+                          key={`sqc_${item.id}_${idx}`}
                           className={`transition-colors bg-rose-500/5 hover:bg-rose-500/10 ${
                             isLight ? 'text-slate-800' : 'text-slate-200'
                           }`}
@@ -2669,9 +2669,9 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                      {filteredDrawstringQcNotOk.map((item) => (
+                      {filteredDrawstringQcNotOk.map((item, idx) => (
                         <tr 
-                          key={item.id}
+                          key={`dqc_${item.id}_${idx}`}
                           className={`transition-colors bg-rose-500/5 hover:bg-rose-500/10 ${
                             isLight ? 'text-slate-800' : 'text-slate-200'
                           }`}
@@ -2776,10 +2776,10 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                {filteredAllSewing.map((item) => {
+                {filteredAllSewing.map((item, idx) => {
                   const isQcNotOk = checkQcNotOk(item);
                   return (
-                    <tr key={item.id} className={isQcNotOk ? 'bg-rose-500/10' : ''}>
+                    <tr key={`sew_${item.id}_${idx}`} className={isQcNotOk ? 'bg-rose-500/10' : ''}>
                       <td className="py-2.5 px-2 font-bold border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>
                       <td className="py-2.5 px-2 border-r border-slate-300 dark:border-slate-800">{item.date || '-'}</td>
                       <td className="py-2.5 px-2 font-mono font-bold border-r border-slate-300 dark:border-slate-800">{item.job_no || '-'}</td>
@@ -2852,10 +2852,10 @@ export const DrawstringReport: React.FC<DrawstringReportProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                {filteredAllDrawstring.map((item) => {
+                {filteredAllDrawstring.map((item, idx) => {
                   const isQcNotOk = checkQcNotOk(item);
                   return (
-                    <tr key={item.id} className={isQcNotOk ? 'bg-rose-500/10' : ''}>
+                    <tr key={`draw_${item.id}_${idx}`} className={isQcNotOk ? 'bg-rose-500/10' : ''}>
                       <td className="py-2.5 px-2 font-bold border-r border-slate-300 dark:border-slate-800">{item.buyer_name || item.buyer || '-'}</td>
                       <td className="py-2.5 px-2 border-r border-slate-300 dark:border-slate-800">{item.booking_date || item.date || '-'}</td>
                       <td className="py-2.5 px-2 font-mono font-bold border-r border-slate-300 dark:border-slate-800">{item.ref_no_job_no || item.job_no || '-'}</td>

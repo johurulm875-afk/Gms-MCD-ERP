@@ -25,31 +25,33 @@ export async function extractPdfClientSide(
   }
 
   const promptText = `
-You are an expert Data Extraction AI for Garments Drawstring Booking Reports V2 / Work Orders.
-Your task is to analyze the uploaded PDF Work Order / Booking Report and extract EVERY SINGLE drawstring booking line item across ALL pages.
+You are an expert Data Extraction AI for Garments Sewing Thread / Trims Booking Reports V2 / Work Orders.
+Your task is to analyze the uploaded PDF Work Order / Booking Report and extract EVERY SINGLE booking table line item across ALL pages (from Page 1 to Page 31).
 
-### Document Hierarchy & Field Extraction Rules:
-1. Header Info (Common to all items in document unless specified):
-   - Buyer Name -> "buyer" (e.g., "Bestseller A/S", "STANLEY STELLA")
-   - Booking No / Trims Ref -> "s_thread_ref" (e.g., "GMST-TB-26-00782")
-   - Supplier Name -> "supplier" (e.g., "Gms Trims Limited")
-   - Booking Date -> "booking_date" (e.g., "14-07-2026")
+CRITICAL EXTRACTION RULES:
+1. COMPLETE DOCUMENT COVERAGE: Read every page from Page 1 to the end (Page 31). Do NOT stop after 10 or 20 rows.
+2. NO TRUNCATION & NO DEDUPLICATION: Every single table row in every Job/PO section in the PDF MUST be extracted as an individual object in the JSON Array. Even if colors or item descriptions repeat across different rows or POs, keep EVERY row as a distinct object.
+3. HIERARCHICAL FIELD EXTRACTION FOR EACH ROW:
+   - Header Info:
+     * Buyer Name -> "buyer" (e.g. "Bestseller A/S")
+     * Booking No / Trims Ref -> "s_thread_ref" (e.g. "GMST-TB-26-00840")
+     * Supplier Name -> "supplier" (e.g. "GMS Composite Knitting Ind. Ltd.")
+     * Booking Date -> "booking_date" (e.g. "27-07-2026")
+   - Job/PO Section Header (Each section in PDF has its own Job/PO details):
+     * Job NO -> "job_no" (e.g. "GMST-26-01588", "GMST-26-01651")
+     * Fabric Booking No -> "sr_gt" (e.g. "GMST-FB-26-01401", "GMST-FB-26-01431")
+     * PO No -> "order_no" (e.g. "GMT4710074", "GMT4710500")
+     * Style Ref & Description -> "style" (e.g. "12156101 - JJEORGANIC BASIC TEE SS O-NECK NOOS", "12151955 - JJECORP LOGO TEE SS O-NECK NOOS")
+   - Table Row Columns:
+     * Item Description -> "count" (e.g. "50/2; 100% Spun Polyester; 4000 Mtr/Cone")
+     * Order Qty -> "order_qty" (Numeric order quantity e.g. 36, 1188, 7932, 15180, 16320)
+     * Gmts Color -> "colour" (Full Gmts Color string, e.g. "PREMIUM BLACK", "MOONBEAM DETAIL:SMALL PRINT/MOONBEAM", "PINK-A-BOO DETAIL:SLIM FIT", "SLATE GRAY DETAIL:SMALL PRINT")
+     * Item Color -> "item_color" (Item Color string e.g. "PREMIUM BLACK", "MOONBEAM", "PINK-A-BOO", "SLATE GRAY")
+     * WO Qty / Booking Qty -> "booking_qty" (Extract clean numeric WO Qty in Cones, e.g. 1.0, 53.0, 386.0730, 739.0618)
+     * Cone Length / Meter -> "meter" (e.g. "4000")
+     * Line Remarks -> "remarks" (Any row remarks or "0")
 
-2. Job Section Header (Each section in PDF has its own Job details):
-   - Job NO -> "job_no" (e.g., "GMST-26-01543")
-   - Fabric Booking No -> "sr_gt" (e.g., "GMST-FB-26-01361")
-   - PO No -> "order_no" (e.g., "GMT4728405")
-   - Style Ref & Desc -> "style" (e.g., "12137054 - JJECORP OLD LOGO SWEAT HOOD NOOS")
-
-3. Table Line Items (Extract one JSON object per table row):
-   - Item Description -> "count" (e.g., "40/2", "Spun Polyester Thread", "20/2", "50/2")
-   - Gmts Color / Item Color -> "colour" (e.g., "LIGHT GREY MELANGE", "WHITE", "NAVY BLAZER", "PREMIUM BLACK")
-   - Meter / Length / Cone Meter -> "meter" (e.g., "2000 Meter", "4000", "5000", "5000M"). Extract thread length in meters/cones. DO NOT extract "CM" values like "114 CM" or "120 CM" into meter.
-   - Pantone / Shade No -> "pantone" (e.g., "XS", "S", "19-4007 TCX", "S-102")
-   - WO Qty / Booking Qty -> "booking_qty" (Extract clean numeric quantity, e.g., 20, 123, 285, 410, 308, 183)
-   - Line Remarks -> "remarks" (Any row remarks if present)
-
-Analyze all pages thoroughly. Extract EVERY single row in the tables into the JSON Array.
+Extract ALL pages thoroughly into a single JSON Array containing ALL items from Page 1 to Page 31.
 `;
 
   const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
@@ -72,6 +74,7 @@ Analyze all pages thoroughly. Extract EVERY single row in the tables into the JS
           },
         ],
         config: {
+          maxOutputTokens: 8192,
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.ARRAY,
@@ -87,8 +90,10 @@ Analyze all pages thoroughly. Extract EVERY single row in the tables into the JS
                 style: { type: Type.STRING },
                 count: { type: Type.STRING },
                 colour: { type: Type.STRING },
+                item_color: { type: Type.STRING },
                 meter: { type: Type.STRING },
                 pantone: { type: Type.STRING },
+                order_qty: { type: Type.NUMBER },
                 booking_qty: { type: Type.NUMBER },
                 supplier: { type: Type.STRING },
                 remarks: { type: Type.STRING },

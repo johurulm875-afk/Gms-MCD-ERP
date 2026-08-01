@@ -840,7 +840,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
 
                   return (
                     <tr 
-                      key={item.id} 
+                      key={`${item.id}_${idx}`} 
                       className={`hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors ${
                         isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-slate-100'
                       }`}
@@ -1103,7 +1103,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                   isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
                 }`}
               >
-                {items.map(i => {
+                {items.map((i, idx) => {
                   const bName = i.buyer || i.buyer_name || '';
                   const ref = i.ref_no_job_no || i.style || '';
                   const col = i.color || i.colour || '';
@@ -1112,7 +1112,7 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
                   const rQty = i.rcv_qty ?? i.receive_qty ?? 0;
                   const dQty = i.due_qty ?? i.balance_qty ?? Math.max(0, bQty - rQty);
                   return (
-                    <option key={i.id} value={i.id}>
+                    <option key={`${i.id}_${idx}`} value={i.id}>
                       {bName} | Ref: {ref} | {col} | {sizeVal} (Due: {dQty.toLocaleString()})
                     </option>
                   );
@@ -1434,8 +1434,8 @@ export const DailyDrawstringReceivedUpdate: React.FC<DailyDrawstringReceivedUpda
 
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {historyItem.receive_logs && historyItem.receive_logs.length > 0 ? (
-                historyItem.receive_logs.map((log) => (
-                  <div key={log.id} className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
+                historyItem.receive_logs.map((log, lIdx) => (
+                  <div key={`${log.id || 'log'}_${lIdx}`} className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
                     isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
                   }`}>
                     <div>

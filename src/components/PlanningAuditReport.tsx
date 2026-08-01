@@ -1262,12 +1262,12 @@ export const PlanningAuditReport: React.FC<PlanningAuditReportProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((row) => {
+                  filteredRows.map((row, rIdx) => {
                     const isMatched = row.status === 'MATCHED';
 
                     return (
                       <tr 
-                        key={row.id}
+                        key={`${row.id}_${rIdx}`}
                         className={`transition-colors hover:bg-emerald-50/40 dark:hover:bg-emerald-950/20 ${
                           isLight ? 'text-slate-800' : 'text-slate-200'
                         }`}

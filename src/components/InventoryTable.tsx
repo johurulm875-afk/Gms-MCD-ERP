@@ -358,11 +358,11 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                 </td>
               </tr>
             ) : (
-              paginatedItems.map((item) => {
+              paginatedItems.map((item, idx) => {
                 const styleInfo = getItemRowStyle(item.booking_qty, item.receive_qty);
 
                 return (
-                  <tr key={item.id} className={`${styleInfo.rowBg} group transition-colors whitespace-nowrap`}>
+                  <tr key={`${item.id}_${idx}`} className={`${styleInfo.rowBg} group transition-colors whitespace-nowrap`}>
                     
                     {/* SL / ID */}
                     <td className="py-2.5 px-2 font-mono text-[11px] text-slate-500 font-bold">

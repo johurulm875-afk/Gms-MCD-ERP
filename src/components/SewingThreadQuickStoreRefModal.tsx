@@ -1168,7 +1168,7 @@ export const SewingThreadQuickStoreRefModal: React.FC<SewingThreadQuickStoreRefM
 
                   return (
                     <tr
-                      key={item.id}
+                      key={`${item.id}_${rIdx}`}
                       className={`transition-colors ${
                         isDark ? 'bg-slate-900/90 hover:bg-slate-800/80 text-slate-100' : 'bg-white hover:bg-slate-50 text-slate-900'
                       }`}

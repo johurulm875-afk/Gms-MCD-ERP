@@ -1347,7 +1347,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
 
                   return (
                     <tr
-                      key={item.id}
+                      key={`${item.id}_${rIdx}`}
                       className={`transition-colors ${
                         isDark
                           ? 'bg-slate-900/90 hover:bg-slate-800/80 text-slate-100'
@@ -1500,7 +1500,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                                     Receive Sub-Batches ({state.receive_sub_batches.length}):
                                   </div>
                                   {state.receive_sub_batches.map((sb, sbIdx) => (
-                                    <div key={sb.id} className="flex items-center gap-1">
+                                    <div key={`${sb.id || 'sb'}_${sbIdx}`} className="flex items-center gap-1">
                                       <span className="font-bold text-slate-500">#{sbIdx + 1}</span>
                                       <input
                                         type="number"
@@ -1663,7 +1663,7 @@ export const QuickStoreRefModal: React.FC<QuickStoreRefModalProps> = ({
                                 Issue Sub-Batches ({state.issue_sub_batches.length}):
                               </div>
                               {state.issue_sub_batches.map((sb, sbIdx) => (
-                                <div key={sb.id} className="flex items-center gap-1">
+                                <div key={`${sb.id || 'sb'}_${sbIdx}`} className="flex items-center gap-1">
                                   <span className="font-bold text-slate-500">#{sbIdx + 1}</span>
                                   <input
                                     type="number"
