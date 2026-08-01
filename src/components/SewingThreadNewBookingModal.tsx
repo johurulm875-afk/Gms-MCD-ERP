@@ -80,15 +80,178 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [savedCount, setSavedCount] = useState(1);
 
-  // AI PDF Extractor state
+  // AI PDF / Image Extractor state
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [extractedItems, setExtractedItems] = useState<any[] | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
-  const [lastUploadedFile, setLastUploadedFile] = useState<File | null>(null);
+  const [lastUploadedFiles, setLastUploadedFiles] = useState<File[] | null>(null);
   const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openrouter'>(() => (localStorage.getItem('ai_provider') as 'gemini' | 'openrouter') || 'gemini');
+  const [openRouterKey, setOpenRouterKey] = useState<string>(() => localStorage.getItem('openrouter_api_key') || '');
+  const [openRouterModel, setOpenRouterModel] = useState<string>(() => localStorage.getItem('openrouter_model') || 'qwen/qwen-2.5-vl-72b-instruct:free');
   const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    const pdfFile = fileList.find(f => f.type.includes('pdf') || f.name.endsWith('.pdf'));
+    const imageFiles = fileList.filter(f => f.type.startsWith('image/'));
+
+    if (!pdfFile && imageFiles.length === 0) {
+      setPdfError("Please select a valid PDF or Image file (JPG, PNG, WEBP).");
+      return;
+    }
+
+    setLastUploadedFiles(fileList);
+    setIsAnalyzingPdf(true);
+    setPdfError(null);
+    const uploadedNames = fileList.map(f => f.name).join(', ');
+    setPdfFileName(uploadedNames);
+
+    try {
+      let items: any[] = [];
+      let isBackendSuccess = false;
+
+      if (imageFiles.length > 0) {
+        // Read images as Base64 data URLs
+        const readPromises = imageFiles.map(file => new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        }));
+
+        const imagesBase64 = await Promise.all(readPromises);
+
+        // 1. Try backend API
+        try {
+          const res = await fetch('/api/extract-sewing-thread-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imagesBase64,
+              aiProvider,
+              apiKey: userApiKey || undefined,
+              openRouterKey: openRouterKey || undefined,
+              openRouterModel
+            })
+          });
+
+          const rawText = await res.text();
+          if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
+            const data = JSON.parse(rawText);
+            if (res.ok && data.success && Array.isArray(data.data)) {
+              items = data.data;
+              isBackendSuccess = true;
+            } else if (data.error) {
+              const errStr = String(data.error);
+              if (res.status === 429 || errStr.includes('429') || errStr.includes('quota')) {
+                throw new Error("Gemini free limit reached. Switch to Qwen OpenRouter Key below or wait 15 seconds.");
+              }
+              throw new Error(errStr);
+            }
+          }
+        } catch (backendErr: any) {
+          console.warn("Backend error, trying client extractor:", backendErr);
+          if (backendErr.message && (backendErr.message.includes('429') || backendErr.message.includes('Key') || backendErr.message.includes('OpenRouter'))) {
+            throw backendErr;
+          }
+        }
+
+        // 2. Client-side fallback
+        if (!isBackendSuccess) {
+          items = await extractPdfClientSide(
+            imagesBase64,
+            'image/jpeg',
+            userApiKey,
+            { aiProvider, openRouterKey, openRouterModel }
+          );
+        }
+
+      } else if (pdfFile) {
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(pdfFile);
+        });
+
+        // 1. Try backend API
+        try {
+          const res = await fetch('/api/extract-sewing-thread-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pdfBase64: base64Data,
+              mimeType: 'application/pdf',
+              aiProvider,
+              apiKey: userApiKey || undefined,
+              openRouterKey: openRouterKey || undefined,
+              openRouterModel
+            })
+          });
+
+          const rawText = await res.text();
+          if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
+            const data = JSON.parse(rawText);
+            if (res.ok && data.success && Array.isArray(data.data)) {
+              items = data.data;
+              isBackendSuccess = true;
+            } else if (data.error) {
+              const errStr = String(data.error);
+              if (res.status === 429 || errStr.includes('429') || errStr.includes('quota')) {
+                throw new Error("Gemini free limit reached. Switch to Qwen OpenRouter Key below or wait 15 seconds.");
+              }
+              throw new Error(errStr);
+            }
+          }
+        } catch (backendErr: any) {
+          console.warn("Backend API error:", backendErr);
+          if (backendErr.message && (backendErr.message.includes('429') || backendErr.message.includes('Key') || backendErr.message.includes('OpenRouter'))) {
+            throw backendErr;
+          }
+        }
+
+        if (!isBackendSuccess) {
+          items = await extractPdfClientSide(
+            base64Data,
+            'application/pdf',
+            userApiKey,
+            { aiProvider, openRouterKey, openRouterModel }
+          );
+        }
+      }
+
+      if (!Array.isArray(items) || items.length === 0) {
+        setPdfError("No thread booking rows could be extracted from the uploaded document/images. Please check document format.");
+      } else {
+        // Offer merging if items already exist
+        if (extractedItems && extractedItems.length > 0) {
+          setExtractedItems(prev => [...(prev || []), ...items]);
+        } else {
+          setExtractedItems(items);
+        }
+      }
+    } catch (err: any) {
+      console.error("Extraction Error:", err);
+      const msg = String(err?.message || err);
+      if (
+        msg.includes("Gemini API Key") ||
+        msg.includes("429") ||
+        msg.includes("quota") ||
+        msg.includes("OpenRouter") ||
+        msg.includes("rate limit")
+      ) {
+        setShowApiKeyInput(true);
+      }
+      setPdfError(msg || "An error occurred while parsing document.");
+    } finally {
+      setIsAnalyzingPdf(false);
+    }
+  };
 
   const doResetForm = () => {
     setFormData({
@@ -138,104 +301,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
   };
 
   const handlePdfUpload = async (file: File) => {
-    if (!file) return;
-    if (!file.type.includes('pdf') && !file.name.endsWith('.pdf')) {
-      setPdfError("Please select a valid PDF Work Order / Booking Report file.");
-      return;
-    }
-
-    setLastUploadedFile(file);
-    setIsAnalyzingPdf(true);
-    setPdfError(null);
-    setExtractedItems(null);
-    setPdfFileName(file.name);
-
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const base64Data = reader.result as string;
-          let items: any[] = [];
-          let isBackendSuccess = false;
-
-          // 1. First try backend Express API
-          try {
-            const res = await fetch('/api/extract-sewing-thread-pdf', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pdfBase64: base64Data, mimeType: 'application/pdf', apiKey: userApiKey || undefined })
-            });
-
-            const rawText = await res.text();
-            if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
-              try {
-                const data = JSON.parse(rawText);
-                if (res.ok && data.success && Array.isArray(data.data)) {
-                  items = data.data;
-                  isBackendSuccess = true;
-                } else if (!res.ok && data.error) {
-                  // If backend gave an explicit API or rate-limit error, throw it directly
-                  const errMessage = String(data.error);
-                  if (res.status === 429 || errMessage.includes('429') || errMessage.includes('quota') || errMessage.includes('RESOURCE_EXHAUSTED')) {
-                    throw new Error(errMessage || "Gemini API rate limit / quota exceeded (429). Please wait 15–30 seconds before retrying or enter your custom Gemini API key below.");
-                  } else if (res.status !== 404) {
-                    throw new Error(errMessage);
-                  }
-                }
-              } catch (parseErr: any) {
-                if (parseErr.message && (parseErr.message.includes('429') || parseErr.message.includes('quota') || parseErr.message.includes('rate limit'))) {
-                  throw parseErr;
-                }
-              }
-            }
-          } catch (backendErr: any) {
-            const errStr = String(backendErr?.message || backendErr);
-            if (errStr.includes('429') || errStr.includes('quota') || errStr.includes('rate limit')) {
-              throw backendErr; // Don't fallback to client-side if rate limited
-            }
-            console.warn("Backend API not reachable (GitHub Pages / static host), falling back to client-side extraction:", backendErr);
-          }
-
-          // 2. If backend endpoint returned HTML/404 or failed (e.g. on GitHub Pages), fallback to client-side Gemini extraction
-          if (!isBackendSuccess) {
-            console.log("Using Client-Side Gemini Extraction for GitHub Pages static host...");
-            items = await extractPdfClientSide(base64Data, 'application/pdf', userApiKey);
-          }
-
-          if (!Array.isArray(items) || items.length === 0) {
-            setPdfError("No thread booking rows could be extracted from this PDF. Please check the document format.");
-          } else {
-            setExtractedItems(items);
-          }
-        } catch (err: any) {
-          console.error("PDF Extraction Error:", err);
-          const msg = String(err?.message || err);
-          if (
-            msg.includes("Gemini API Key") ||
-            msg.includes("429") ||
-            msg.includes("quota") ||
-            msg.includes("rate limit") ||
-            msg.includes("RESOURCE_EXHAUSTED") ||
-            msg.includes("free tier")
-          ) {
-            setShowApiKeyInput(true);
-          }
-          setPdfError(msg || "An error occurred while parsing PDF.");
-        } finally {
-          setIsAnalyzingPdf(false);
-        }
-      };
-
-      reader.onerror = () => {
-        setPdfError("Failed to read PDF file.");
-        setIsAnalyzingPdf(false);
-      };
-
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      setPdfError(err.message || "Unexpected upload error.");
-      setIsAnalyzingPdf(false);
-    }
+    await handleFileUpload([file]);
   };
 
   const applyExtractedToForm = () => {
@@ -522,7 +588,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
           
-          {/* SECTION 0: AI PDF Work Order Extractor */}
+          {/* SECTION 0: AI PDF / Image Work Order Extractor */}
           <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-indigo-950 to-emerald-950 text-white border border-indigo-800/80 shadow-md space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
@@ -531,13 +597,13 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                 </div>
                 <div>
                   <h3 className="text-sm font-bold flex items-center gap-2 text-white">
-                    <span>AI PDF Work Order Extractor</span>
+                    <span>AI PDF / Image Work Order Extractor</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/30 text-emerald-300 border border-emerald-400/30">
-                      Gemini 3.6 Flash
+                      {aiProvider === 'openrouter' ? 'Qwen 2.5 Vision (Free)' : 'Gemini 3.6 Flash'}
                     </span>
                   </h3>
                   <p className="text-xs text-slate-300">
-                    Upload Garments Sewing Thread Booking PDF to extract all line items automatically
+                    Upload PDF or 1-3 Images (JPG, PNG) to extract booking line items automatically
                   </p>
                 </div>
               </div>
@@ -545,11 +611,13 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
               <input
                 type="file"
                 ref={fileInputRef}
-                accept=".pdf,application/pdf"
+                accept=".pdf,application/pdf,image/*,.jpg,.jpeg,.png,.webp"
+                multiple
                 className="hidden"
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handlePdfUpload(file);
+                  if (e.target.files && e.target.files.length > 0) {
+                    handleFileUpload(e.target.files);
+                  }
                 }}
               />
 
@@ -557,10 +625,11 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                 <button
                   type="button"
                   onClick={() => setShowApiKeyInput(prev => !prev)}
-                  title="Configure Gemini API Key for GitHub Pages / Static Hosting"
-                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors cursor-pointer"
+                  title="AI Provider Settings & API Keys"
+                  className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors cursor-pointer text-xs font-bold flex items-center gap-1.5"
                 >
                   <Key className="w-4 h-4 text-emerald-400" />
+                  <span>AI Keys / Settings</span>
                 </button>
 
                 <button
@@ -572,52 +641,127 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                   {isAnalyzingPdf ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                      <span>Analyzing PDF...</span>
+                      <span>Analyzing File(s)...</span>
                     </>
                   ) : (
                     <>
                       <Upload className="w-4 h-4" />
-                      <span>Upload PDF Booking</span>
+                      <span>Upload PDF / Images</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Optional Gemini API Key Input for GitHub Pages */}
+            {/* AI Provider & API Keys Configuration Panel */}
             {showApiKeyInput && (
-              <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-xl space-y-2 text-xs">
-                <div className="flex items-center justify-between text-slate-300">
+              <div className="p-3.5 bg-slate-900/95 border border-emerald-500/40 rounded-xl space-y-3 text-xs animate-in fade-in duration-150">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
                   <span className="font-bold text-emerald-300 flex items-center gap-1.5">
                     <Key className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>GitHub Pages / Client-Side Gemini API Key</span>
+                    <span>Select AI Provider & Configure API Keys</span>
                   </span>
-                  <span className="text-[10px] text-slate-400">
-                    Saved in browser localStorage
-                  </span>
+                  <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiProvider('gemini');
+                        localStorage.setItem('ai_provider', 'gemini');
+                      }}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                        aiProvider === 'gemini'
+                          ? 'bg-emerald-500 text-slate-950'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Google Gemini API
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiProvider('openrouter');
+                        localStorage.setItem('ai_provider', 'openrouter');
+                      }}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                        aiProvider === 'openrouter'
+                          ? 'bg-indigo-500 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Qwen Free (OpenRouter)
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="password"
-                    placeholder="Enter Gemini API Key (e.g. AIzaSy...)"
-                    value={userApiKey}
-                    onChange={(e) => {
-                      setUserApiKey(e.target.value);
-                      localStorage.setItem('gemini_api_key', e.target.value);
-                    }}
-                    className="flex-1 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-white font-mono text-xs outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      localStorage.setItem('gemini_api_key', userApiKey);
-                      setShowApiKeyInput(false);
-                    }}
-                    className="px-3 py-1.5 bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-emerald-400 transition-colors cursor-pointer"
-                  >
-                    Save Key
-                  </button>
-                </div>
+
+                {/* Gemini Settings */}
+                {aiProvider === 'gemini' ? (
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-300">
+                      Gemini API Key (Optional for fallback / rate limit bypass):
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        placeholder="Enter Gemini API Key (AIzaSy...)"
+                        value={userApiKey}
+                        onChange={(e) => {
+                          setUserApiKey(e.target.value);
+                          localStorage.setItem('gemini_api_key', e.target.value);
+                        }}
+                        className="flex-1 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-white font-mono text-xs outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.setItem('gemini_api_key', userApiKey);
+                          setShowApiKeyInput(false);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-emerald-400 transition-colors cursor-pointer"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* OpenRouter Qwen Settings */
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] font-semibold text-indigo-300">
+                        OpenRouter API Key (Free model support):
+                      </label>
+                      <a
+                        href="https://openrouter.ai/keys"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-indigo-400 hover:underline flex items-center gap-0.5"
+                      >
+                        Get free key at openrouter.ai ↗
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        placeholder="sk-or-v1-..."
+                        value={openRouterKey}
+                        onChange={(e) => {
+                          setOpenRouterKey(e.target.value);
+                          localStorage.setItem('openrouter_api_key', e.target.value);
+                        }}
+                        className="flex-1 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-white font-mono text-xs outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.setItem('openrouter_api_key', openRouterKey);
+                          setShowApiKeyInput(false);
+                        }}
+                        className="px-3 py-1.5 bg-indigo-500 text-white font-bold rounded-lg text-xs hover:bg-indigo-400 transition-colors cursor-pointer"
+                      >
+                        Save Key
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -628,17 +772,30 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
                   <span>{pdfError}</span>
                 </div>
-                {lastUploadedFile && (
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    disabled={isAnalyzingPdf}
-                    onClick={() => handlePdfUpload(lastUploadedFile)}
-                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                    onClick={() => {
+                      setAiProvider('openrouter');
+                      localStorage.setItem('ai_provider', 'openrouter');
+                      setShowApiKeyInput(true);
+                    }}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzingPdf ? 'animate-spin' : ''}`} />
-                    <span>{isAnalyzingPdf ? 'Retrying...' : 'Retry Parsing PDF'}</span>
+                    Switch to Qwen Free
                   </button>
-                )}
+                  {lastUploadedFiles && (
+                    <button
+                      type="button"
+                      disabled={isAnalyzingPdf}
+                      onClick={() => handleFileUpload(lastUploadedFiles)}
+                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzingPdf ? 'animate-spin' : ''}`} />
+                      <span>{isAnalyzingPdf ? 'Retrying...' : 'Retry Parsing'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -656,6 +813,14 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExtractedItems(null)}
+                      className="px-2 py-1 text-xs text-slate-400 hover:text-rose-300 transition-colors"
+                      title="Clear extracted list"
+                    >
+                      Clear
+                    </button>
                     <button
                       type="button"
                       onClick={applyExtractedToForm}

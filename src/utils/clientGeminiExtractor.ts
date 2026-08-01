@@ -12,35 +12,25 @@ function base64ToUint8Array(base64: string): Uint8Array {
 }
 
 export async function extractPdfClientSide(
-  base64Data: string,
+  base64Data: string | string[],
   mimeType: string = 'application/pdf',
-  customApiKey?: string
+  customApiKey?: string,
+  options?: {
+    aiProvider?: 'gemini' | 'openrouter';
+    openRouterKey?: string;
+    openRouterModel?: string;
+  }
 ): Promise<any[]> {
-  const apiKey =
-    customApiKey ||
-    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-    localStorage.getItem('gemini_api_key') ||
-    '';
-
-  if (!apiKey) {
-    throw new Error(
-      "GitHub Pages (Static Host) detected! Please enter your Gemini API Key in the PDF upload window to parse PDFs directly on GitHub Pages."
-    );
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  let cleanBase64 = base64Data;
-  if (cleanBase64.includes(',')) {
-    cleanBase64 = cleanBase64.split(',')[1];
-  }
+  const provider = options?.aiProvider || (localStorage.getItem('ai_provider') as 'gemini' | 'openrouter') || 'gemini';
+  const openRouterKey = options?.openRouterKey || localStorage.getItem('openrouter_api_key') || '';
+  const openRouterModel = options?.openRouterModel || localStorage.getItem('openrouter_model') || 'qwen/qwen-2.5-vl-72b-instruct:free';
 
   const promptText = `
 You are an expert Data Extraction AI for Garments Sewing Thread / Trims Booking Reports V2 / Work Orders.
-Your task is to analyze the uploaded PDF Work Order / Booking Report page(s) and extract EVERY SINGLE individual booking table line item.
+Your task is to analyze the uploaded PDF Work Order / Booking Report page(s) or Image(s) and extract EVERY SINGLE individual booking table line item.
 
 CRITICAL EXTRACTION RULES (STRICT LINE-BY-LINE PER ROW):
-1. IGNORE SUMMARY / GRAND TOTAL / RECAP TABLES AT THE END OF PDF:
+1. IGNORE SUMMARY / GRAND TOTAL / RECAP TABLES AT THE END OF PDF/IMAGE:
    - Garments PDF Work Orders have a SUMMARY / RECAP table at the end listing items like "Item 7: (40/2; 100% Spun Polyester) Total Cones: 4624" with multiple comma-separated Job Nos. YOU MUST IGNORE AND SKIP THIS SUMMARY TABLE COMPLETELY. DO NOT EXTRACT IT.
    - NEVER extract rows where Garment Color is a number like "7" or "1", or where Job No is a comma-separated list of multiple jobs.
 
@@ -77,6 +67,91 @@ CRITICAL EXTRACTION RULES (STRICT LINE-BY-LINE PER ROW):
 Extract ALL individual color breakdown table rows into a JSON Array.
 `;
 
+  // OpenRouter Client-Side Processing
+  if (provider === 'openrouter') {
+    if (!openRouterKey) {
+      throw new Error("Please enter your OpenRouter API Key (sk-or-v1-...) to use Qwen Free AI.");
+    }
+
+    const contentItems: any[] = [{ type: 'text', text: promptText + "\nRespond STRICTLY with a valid JSON array of objects." }];
+
+    if (Array.isArray(base64Data)) {
+      base64Data.forEach(b => {
+        const u = b.startsWith('data:') ? b : `data:image/jpeg;base64,${b}`;
+        contentItems.push({ type: 'image_url', image_url: { url: u } });
+      });
+    } else {
+      const u = base64Data.startsWith('data:') ? base64Data : `data:${mimeType};base64,${base64Data}`;
+      contentItems.push({ type: 'image_url', image_url: { url: u } });
+    }
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openRouterKey}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Sewing Thread Manager',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: openRouterModel || 'qwen/qwen-2.5-vl-72b-instruct:free',
+        messages: [{ role: 'user', content: contentItems }]
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`OpenRouter Error (${res.status}): ${errText}`);
+    }
+
+    const json = await res.json();
+    const txt = json?.choices?.[0]?.message?.content || '';
+    const match = txt.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    let rawItems: any[] = [];
+    if (match) {
+      try { rawItems = JSON.parse(match[0]); } catch {}
+    } else {
+      try { rawItems = JSON.parse(txt); } catch {}
+    }
+
+    return (Array.isArray(rawItems) ? rawItems : []).map(item => ({
+      buyer: item.buyer || item.buyer_name || '',
+      booking_date: item.booking_date || item.date || '',
+      job_no: item.job_no || '',
+      sr_gt: item.sr_gt || item.fabric_booking || '',
+      order_no: item.order_no || item.po_no || '',
+      s_thread_ref: item.s_thread_ref || item.trims_booking || item.booking_no || '',
+      style: item.style || '',
+      count: item.count || item.thread_count || item.item_description || '40/2',
+      colour: item.colour || item.color || item.gmts_color || '',
+      item_color: item.item_color || item.colour || '',
+      meter: String(item.meter || item.cone_length || '4000'),
+      pantone: item.pantone || '',
+      order_qty: Number(item.order_qty) || 0,
+      booking_qty: Number(item.booking_qty || item.wo_qty || item.order_qty) || 0,
+      supplier: item.supplier || '',
+      remarks: item.remarks || ''
+    }));
+  }
+
+  // Gemini Client-Side Processing
+  const apiKey =
+    customApiKey ||
+    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
+    localStorage.getItem('gemini_api_key') ||
+    '';
+
+  if (!apiKey) {
+    throw new Error(
+      "Please enter your Gemini API Key or OpenRouter Key in the settings below to parse files."
+    );
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const firstBase64 = Array.isArray(base64Data) ? base64Data[0] : base64Data;
+  let cleanBase64 = firstBase64.includes(',') ? firstBase64.split(',')[1] : firstBase64;
+
   const isRateLimitError = (err: any): boolean => {
     if (!err) return false;
     const errStr = String(err?.message || err).toLowerCase();
@@ -97,27 +172,29 @@ Extract ALL individual color breakdown table rows into a JSON Array.
     return errStr.includes('503') || errStr.includes('unavailable') || errStr.includes('high demand');
   };
 
-  const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-    const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
+  const extractChunk = async (chunkData: string | string[]): Promise<any[]> => {
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.1-pro-preview', 'gemini-3.1-flash-lite'];
     let response: any = null;
     let lastError: any = null;
+
+    const contents: any[] = [];
+    if (Array.isArray(chunkData)) {
+      chunkData.forEach(b => {
+        let clean = b.includes(',') ? b.split(',')[1] : b;
+        contents.push({ inlineData: { mimeType: 'image/jpeg', data: clean } });
+      });
+    } else {
+      let clean = chunkData.includes(',') ? chunkData.split(',')[1] : chunkData;
+      contents.push({ inlineData: { mimeType: mimeType, data: clean } });
+    }
+    contents.push({ text: promptText });
 
     for (const modelName of modelsToTry) {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           response = await ai.models.generateContent({
             model: modelName,
-            contents: [
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: chunkBase64,
-                },
-              },
-              {
-                text: promptText,
-              },
-            ],
+            contents: contents,
             config: {
               maxOutputTokens: 8192,
               responseMimeType: 'application/json',
@@ -155,8 +232,8 @@ Extract ALL individual color breakdown table rows into a JSON Array.
           lastError = err;
           if (isRateLimitError(err)) {
             if (attempt === 0) {
-              console.warn(`[Client PDF Extractor] Rate limited on ${modelName}. Waiting 4s...`);
-              await new Promise(r => setTimeout(r, 4000));
+              console.warn(`[Client PDF Extractor] Rate limited on ${modelName}. Waiting 3s...`);
+              await new Promise(r => setTimeout(r, 3000));
             } else {
               console.warn(`[Client PDF Extractor] Gemini API quota limit on ${modelName}, trying fallback model...`);
               break;
@@ -195,46 +272,59 @@ Extract ALL individual color breakdown table rows into a JSON Array.
     }
   };
 
+  const extractPdfByPages = async (pdfDoc: PDFDocument, totalPages: number, pagesPerChunk: number): Promise<any[]> => {
+    const items: any[] = [];
+    for (let i = 0; i < totalPages; i += pagesPerChunk) {
+      const endPage = Math.min(i + pagesPerChunk, totalPages);
+      console.log(`[Client PDF Extractor] Processing pages ${i + 1} to ${endPage} of ${totalPages}...`);
+      try {
+        const subDoc = await PDFDocument.create();
+        const pageIndices = [];
+        for (let j = i; j < endPage; j++) {
+          pageIndices.push(j);
+        }
+        const copiedPages = await subDoc.copyPages(pdfDoc, pageIndices);
+        copiedPages.forEach(p => subDoc.addPage(p));
+        const subBase64 = await subDoc.saveAsBase64();
+        const chunkResult = await extractChunk(subBase64);
+        if (Array.isArray(chunkResult)) {
+          items.push(...chunkResult);
+        }
+      } catch (chunkErr: any) {
+        if (isRateLimitError(chunkErr)) {
+          throw chunkErr;
+        }
+        console.warn(`[Client PDF Extractor] Chunk ${i + 1}-${endPage} extraction failed:`, chunkErr?.message || chunkErr);
+      }
+
+      if (endPage < totalPages) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    return items;
+  };
+
   let rawItems: any[] = [];
   try {
     const uint8Bytes = base64ToUint8Array(cleanBase64);
     const pdfDoc = await PDFDocument.load(uint8Bytes, { ignoreEncryption: true });
     const totalPages = pdfDoc.getPageCount();
 
-    console.log(`[Client PDF Extractor] PDF loaded with ${totalPages} pages. Extracting in single call...`);
-    try {
-      rawItems = await extractChunk(cleanBase64);
-      console.log(`[Client PDF Extractor] Single-call extraction successful: extracted ${rawItems.length} items.`);
-    } catch (singleCallErr: any) {
-      if (isRateLimitError(singleCallErr)) {
-        throw singleCallErr;
-      }
-
-      if (totalPages > 1) {
-        console.warn(`[Client PDF Extractor] Single-call extraction failed (${singleCallErr?.message || singleCallErr}). Falling back to 10-page chunking...`);
-        const PAGES_PER_CHUNK = 10;
-        for (let i = 0; i < totalPages; i += PAGES_PER_CHUNK) {
-          const endPage = Math.min(i + PAGES_PER_CHUNK, totalPages);
-          const subDoc = await PDFDocument.create();
-          const pageIndices = [];
-          for (let j = i; j < endPage; j++) {
-            pageIndices.push(j);
-          }
-          const copiedPages = await subDoc.copyPages(pdfDoc, pageIndices);
-          copiedPages.forEach(p => subDoc.addPage(p));
-          const subBase64 = await subDoc.saveAsBase64();
-          const chunkResult = await extractChunk(subBase64);
-          if (Array.isArray(chunkResult)) {
-            rawItems.push(...chunkResult);
-          }
-
-          if (endPage < totalPages) {
-            await new Promise(r => setTimeout(r, 2000));
-          }
+    console.log(`[Client PDF Extractor] PDF loaded with ${totalPages} pages.`);
+    if (totalPages <= 2) {
+      try {
+        rawItems = await extractChunk(cleanBase64);
+        console.log(`[Client PDF Extractor] Single-call extraction successful: extracted ${rawItems.length} items.`);
+      } catch (singleCallErr: any) {
+        if (isRateLimitError(singleCallErr)) {
+          throw singleCallErr;
         }
-      } else {
-        throw singleCallErr;
+        console.warn(`[Client PDF Extractor] Single-call extraction failed on ${totalPages}-page PDF. Splitting page by page...`);
+        rawItems = await extractPdfByPages(pdfDoc, totalPages, 1);
       }
+    } else {
+      console.log(`[Client PDF Extractor] Processing multi-page PDF (${totalPages} pages) in 2-page chunks...`);
+      rawItems = await extractPdfByPages(pdfDoc, totalPages, 2);
     }
   } catch (err: any) {
     if (isRateLimitError(err)) {
