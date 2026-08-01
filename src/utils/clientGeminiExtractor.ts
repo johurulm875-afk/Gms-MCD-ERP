@@ -77,7 +77,7 @@ Extract ALL individual table rows into a JSON Array.
 `;
 
   const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-pro'];
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest'];
     let response: any = null;
     let lastError: any = null;
 
