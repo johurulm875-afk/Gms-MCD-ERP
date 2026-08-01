@@ -95,7 +95,7 @@ Extract ALL individual table rows into a JSON Array.
 
     // Function to extract items from a single base64 chunk with retry on 429
     const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-      const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+      const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-pro'];
       let response: any = null;
       let lastError: any = null;
 
@@ -155,8 +155,11 @@ Extract ALL individual table rows into a JSON Array.
             if (isRateLimit && attempt < 2) {
               console.warn(`[PDF Extractor] Rate limited on ${modelName} (attempt ${attempt + 1}). Waiting 7 seconds before retrying...`);
               await new Promise(r => setTimeout(r, 7000));
+            } else if (attempt < 2) {
+              console.warn(`Model ${modelName} attempt ${attempt + 1} failed (${errStr}), retrying in 2s...`);
+              await new Promise(r => setTimeout(r, 2000));
             } else {
-              console.warn(`Model ${modelName} failed or busy (${errStr}), trying fallback model...`);
+              console.warn(`Model ${modelName} failed after 3 attempts (${errStr}), trying fallback model...`);
               break; // Try next model in list
             }
           }

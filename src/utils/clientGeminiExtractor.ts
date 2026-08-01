@@ -77,7 +77,7 @@ Extract ALL individual table rows into a JSON Array.
 `;
 
   const extractChunk = async (chunkBase64: string): Promise<any[]> => {
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-pro'];
     let response: any = null;
     let lastError: any = null;
 
@@ -137,8 +137,11 @@ Extract ALL individual table rows into a JSON Array.
           if (isRateLimit && attempt < 2) {
             console.warn(`[Client PDF Extractor] Rate limited on ${modelName} (attempt ${attempt + 1}). Waiting 7 seconds before retrying...`);
             await new Promise(r => setTimeout(r, 7000));
+          } else if (attempt < 2) {
+            console.warn(`Client Gemini model ${modelName} attempt ${attempt + 1} failed (${errStr}), retrying in 2s...`);
+            await new Promise(r => setTimeout(r, 2000));
           } else {
-            console.warn(`Client Gemini model ${modelName} failed/busy:`, err);
+            console.warn(`Client Gemini model ${modelName} failed after 3 attempts (${errStr}), trying fallback model...`);
             break;
           }
         }
