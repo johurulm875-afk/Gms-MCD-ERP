@@ -54,32 +54,43 @@ app.post('/api/extract-sewing-thread-pdf', async (req, res) => {
 
     const promptText = `
 You are an expert Data Extraction AI for Garments Sewing Thread / Trims Booking Reports V2 / Work Orders.
-Your task is to analyze the uploaded PDF Work Order / Booking Report page(s) and extract EVERY SINGLE booking table line item.
+Your task is to analyze the uploaded PDF Work Order / Booking Report page(s) and extract EVERY SINGLE individual booking table line item.
 
-CRITICAL EXTRACTION RULES:
-1. COMPLETE PAGE COVERAGE: Read every single table row on every page provided. Do NOT skip any rows or POs.
-2. NO TRUNCATION & NO DEDUPLICATION: Every single table row in every Job/PO section in the PDF page MUST be extracted as an individual object in the JSON Array.
-3. HIERARCHICAL FIELD EXTRACTION FOR EACH ROW:
+CRITICAL EXTRACTION RULES (STRICT LINE-BY-LINE PER ROW):
+1. ABSOLUTELY NO MERGING / NO COMBINING / NO AGGREGATION:
+   - DO NOT combine multiple Job Nos, PO Nos, or Styles into comma-separated strings (e.g. DO NOT write "GMST-26-01630, GMST-26-01631").
+   - DO NOT combine quantities across different POs or colors into 1 summary object.
+   - Each Job section in the PDF has its OWN single Job No (e.g. "GMST-26-01630"), its OWN single PO No (e.g. "12298993"), and its OWN single Style.
+   - Each row inside the table is for a specific Garments Color / Item Color.
+
+2. MANDATORY INDIVIDUAL ROW EXTRACTION:
+   - Extract EVERY SINGLE table row in EVERY Job/PO section as an individual JSON object in the array.
+   - Every single line item for every color must have its own JSON object containing its exact job_no, order_no, style, colour, item_color, count, meter, and numeric booking_qty.
+
+3. IGNORE SUMMARY / GRAND TOTAL TABLES:
+   - Ignore any overall summary table at the end or top that aggregates total cones across all jobs. Extract ONLY the detailed line-item table rows from each Job/PO breakdown section.
+
+4. HIERARCHICAL FIELD EXTRACTION FOR EACH ROW:
    - Header Info:
      * Buyer Name -> "buyer" (e.g. "Bestseller A/S")
      * Booking No / Trims Ref -> "s_thread_ref" (e.g. "GMST-TB-26-00840")
      * Supplier Name -> "supplier" (e.g. "GMS Composite Knitting Ind. Ltd.")
      * Booking Date -> "booking_date" (e.g. "27-07-2026")
-   - Job/PO Section Header (Each section in PDF has its own Job/PO details):
-     * Job NO -> "job_no" (e.g. "GMST-26-01588", "GMST-26-01651")
-     * Fabric Booking No -> "sr_gt" (e.g. "GMST-FB-26-01401", "GMST-FB-26-01431")
-     * PO No -> "order_no" (e.g. "GMT4710074", "GMT4710500")
-     * Style Ref & Description -> "style" (e.g. "12156101 - JJEORGANIC BASIC TEE SS O-NECK NOOS", "12151955 - JJECORP LOGO TEE SS O-NECK NOOS")
+   - Job/PO Section Header (Each section in PDF has its own single Job/PO details):
+     * Job NO -> "job_no" (e.g. "GMST-26-01588")
+     * Fabric Booking No -> "sr_gt" (e.g. "GMST-FB-26-01401")
+     * PO No -> "order_no" (e.g. "GMT4710074")
+     * Style Ref & Description -> "style" (e.g. "12156101 - JJEORGANIC BASIC TEE SS O-NECK NOOS")
    - Table Row Columns:
      * Item Description -> "count" (e.g. "50/2; 100% Spun Polyester; 4000 Mtr/Cone")
      * Order Qty -> "order_qty" (Numeric order quantity e.g. 36, 1188, 7932, 15180, 16320)
-     * Gmts Color -> "colour" (Full Gmts Color string, e.g. "PREMIUM BLACK", "MOONBEAM DETAIL:SMALL PRINT/MOONBEAM", "PINK-A-BOO DETAIL:SLIM FIT", "SLATE GRAY DETAIL:SMALL PRINT")
-     * Item Color -> "item_color" (Item Color string e.g. "PREMIUM BLACK", "MOONBEAM", "PINK-A-BOO", "SLATE GRAY")
-     * WO Qty / Booking Qty -> "booking_qty" (Extract clean numeric WO Qty in Cones, e.g. 1.0, 53.0, 386.0730, 739.0618)
+     * Gmts Color -> "colour" (Full Gmts Color string, e.g. "PREMIUM BLACK", "MOONBEAM DETAIL:SMALL PRINT/MOONBEAM")
+     * Item Color -> "item_color" (Item Color string e.g. "PREMIUM BLACK", "MOONBEAM")
+     * WO Qty / Booking Qty -> "booking_qty" (Extract clean numeric WO Qty in Cones for THIS specific row, e.g. 1.0, 53.0, 386.07)
      * Cone Length / Meter -> "meter" (e.g. "4000")
      * Line Remarks -> "remarks" (Any row remarks or "0")
 
-Extract ALL table items into a JSON Array.
+Extract ALL individual table rows into a JSON Array.
 `;
 
     // Function to extract items from a single base64 chunk
@@ -161,11 +172,11 @@ Extract ALL table items into a JSON Array.
       const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
       const totalPages = pdfDoc.getPageCount();
 
-      if (totalPages <= 3) {
+      if (totalPages === 1) {
         rawItems = await extractChunk(cleanBase64);
       } else {
-        console.log(`[PDF Extractor] Multi-page PDF detected with ${totalPages} pages. Processing in 3-page chunks...`);
-        const PAGES_PER_CHUNK = 3;
+        console.log(`[PDF Extractor] Multi-page PDF detected with ${totalPages} pages. Processing in 2-page chunks...`);
+        const PAGES_PER_CHUNK = 2;
         for (let i = 0; i < totalPages; i += PAGES_PER_CHUNK) {
           const endPage = Math.min(i + PAGES_PER_CHUNK, totalPages);
           console.log(`[PDF Extractor] Processing pages ${i + 1} to ${endPage} of ${totalPages}...`);
