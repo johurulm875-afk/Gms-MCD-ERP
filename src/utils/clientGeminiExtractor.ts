@@ -1,4 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { PDFDocument } from "pdf-lib";
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
 
 export async function extractPdfClientSide(
   base64Data: string,
@@ -26,11 +37,11 @@ export async function extractPdfClientSide(
 
   const promptText = `
 You are an expert Data Extraction AI for Garments Sewing Thread / Trims Booking Reports V2 / Work Orders.
-Your task is to analyze the uploaded PDF Work Order / Booking Report and extract EVERY SINGLE booking table line item across ALL pages (from Page 1 to Page 31).
+Your task is to analyze the uploaded PDF Work Order / Booking Report page(s) and extract EVERY SINGLE booking table line item.
 
 CRITICAL EXTRACTION RULES:
-1. COMPLETE DOCUMENT COVERAGE: Read every page from Page 1 to the end (Page 31). Do NOT stop after 10 or 20 rows.
-2. NO TRUNCATION & NO DEDUPLICATION: Every single table row in every Job/PO section in the PDF MUST be extracted as an individual object in the JSON Array. Even if colors or item descriptions repeat across different rows or POs, keep EVERY row as a distinct object.
+1. COMPLETE PAGE COVERAGE: Read every single table row on every page provided. Do NOT skip any rows or POs.
+2. NO TRUNCATION & NO DEDUPLICATION: Every single table row in every Job/PO section in the PDF page MUST be extracted as an individual object in the JSON Array.
 3. HIERARCHICAL FIELD EXTRACTION FOR EACH ROW:
    - Header Info:
      * Buyer Name -> "buyer" (e.g. "Bestseller A/S")
@@ -51,125 +62,160 @@ CRITICAL EXTRACTION RULES:
      * Cone Length / Meter -> "meter" (e.g. "4000")
      * Line Remarks -> "remarks" (Any row remarks or "0")
 
-Extract ALL pages thoroughly into a single JSON Array containing ALL items from Page 1 to Page 31.
+Extract ALL table items into a JSON Array.
 `;
 
-  const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest'];
-  let response: any = null;
-  let lastError: any = null;
+  const extractChunk = async (chunkBase64: string): Promise<any[]> => {
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest'];
+    let response: any = null;
+    let lastError: any = null;
 
-  for (const modelName of modelsToTry) {
-    try {
-      response = await ai.models.generateContent({
-        model: modelName,
-        contents: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: cleanBase64,
+    for (const modelName of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: chunkBase64,
+              },
             },
-          },
-          {
-            text: promptText,
-          },
-        ],
-        config: {
-          maxOutputTokens: 8192,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                buyer: { type: Type.STRING },
-                booking_date: { type: Type.STRING },
-                job_no: { type: Type.STRING },
-                sr_gt: { type: Type.STRING },
-                order_no: { type: Type.STRING },
-                s_thread_ref: { type: Type.STRING },
-                style: { type: Type.STRING },
-                count: { type: Type.STRING },
-                colour: { type: Type.STRING },
-                item_color: { type: Type.STRING },
-                meter: { type: Type.STRING },
-                pantone: { type: Type.STRING },
-                order_qty: { type: Type.NUMBER },
-                booking_qty: { type: Type.NUMBER },
-                supplier: { type: Type.STRING },
-                remarks: { type: Type.STRING },
+            {
+              text: promptText,
+            },
+          ],
+          config: {
+            maxOutputTokens: 8192,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  buyer: { type: Type.STRING },
+                  booking_date: { type: Type.STRING },
+                  job_no: { type: Type.STRING },
+                  sr_gt: { type: Type.STRING },
+                  order_no: { type: Type.STRING },
+                  s_thread_ref: { type: Type.STRING },
+                  style: { type: Type.STRING },
+                  count: { type: Type.STRING },
+                  colour: { type: Type.STRING },
+                  item_color: { type: Type.STRING },
+                  meter: { type: Type.STRING },
+                  pantone: { type: Type.STRING },
+                  order_qty: { type: Type.NUMBER },
+                  booking_qty: { type: Type.NUMBER },
+                  supplier: { type: Type.STRING },
+                  remarks: { type: Type.STRING },
+                },
               },
             },
           },
-        },
-      });
+        });
 
-      if (response && response.text) {
-        break;
-      }
-    } catch (err: any) {
-      console.warn(`Client Gemini model ${modelName} failed/busy:`, err);
-      lastError = err;
-    }
-  }
-
-  if (!response || !response.text) {
-    throw lastError || new Error("Failed to extract PDF data using Gemini AI.");
-  }
-
-  const textOutput = response.text || '[]';
-  let parsedData: any[] = [];
-  try {
-    parsedData = JSON.parse(textOutput);
-    if (Array.isArray(parsedData)) {
-      parsedData = parsedData.map((item: any) => {
-        const rawBQty = Number(item.booking_qty || item.wo_qty || item.order_qty) || 0;
-        const cleanBQty = Math.round((rawBQty + Number.EPSILON) * 100) / 100;
-
-        const colorVal = (item.colour || item.color || item.gmts_color || item.item_color || '').toString().trim();
-        const countVal = (item.count || item.item_name || item.item_description || item.description || '').toString().trim();
-        let meterVal = (item.meter || item.cone_meter || item.length || '').toString().trim();
-        if (meterVal.toUpperCase().includes('CM') || meterVal.toLowerCase().includes('114')) {
-          meterVal = '';
+        if (response && response.text) {
+          break;
         }
-        const jobNoVal = (item.job_no || item.ref_no_job_no || '').toString().trim();
-        const srGtVal = (item.sr_gt || item.sr_gt_no || item.fabric_booking_no || '').toString().trim();
-        const poNoVal = (item.order_no || item.po_no || '').toString().trim();
-        const buyerVal = (item.buyer || item.buyer_name || 'BESTSELLER A/S').toString().trim();
-        const storeRefVal = (item.s_thread_ref || item.store_ref || item.booking_no || '').toString().trim();
+      } catch (err: any) {
+        console.warn(`Client Gemini model ${modelName} failed/busy:`, err);
+        lastError = err;
+      }
+    }
 
-        return {
-          buyer: buyerVal,
-          buyer_name: buyerVal,
-          booking_date: item.booking_date || item.date || '',
-          job_no: jobNoVal,
-          ref_no_job_no: jobNoVal,
-          sr_gt: srGtVal,
-          sr_gt_no: srGtVal,
-          order_no: poNoVal,
-          po_no: poNoVal,
-          s_thread_ref: storeRefVal,
-          store_ref: storeRefVal,
-          style: item.style || '',
-          count: countVal,
-          item_name: countVal,
-          colour: colorVal,
-          color: colorVal,
-          meter: meterVal,
-          size: meterVal,
-          pantone: item.pantone || item.gmts_size || '',
-          booking_qty: cleanBQty,
-          wo_qty: cleanBQty,
-          balance_qty: cleanBQty,
-          due_qty: cleanBQty,
-          receive_qty: 0,
-          issue_qty: 0,
-          supplier: item.supplier || '',
-          remarks: item.remarks || ''
-        };
-      });
+    if (!response || !response.text) {
+      throw lastError || new Error("Failed to extract PDF data using Gemini AI.");
+    }
+
+    try {
+      const parsed = JSON.parse(response.text || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  let rawItems: any[] = [];
+  try {
+    const uint8Bytes = base64ToUint8Array(cleanBase64);
+    const pdfDoc = await PDFDocument.load(uint8Bytes, { ignoreEncryption: true });
+    const totalPages = pdfDoc.getPageCount();
+
+    if (totalPages <= 3) {
+      rawItems = await extractChunk(cleanBase64);
+    } else {
+      console.log(`[Client PDF Extractor] Processing ${totalPages} pages in 3-page chunks...`);
+      const PAGES_PER_CHUNK = 3;
+      for (let i = 0; i < totalPages; i += PAGES_PER_CHUNK) {
+        const endPage = Math.min(i + PAGES_PER_CHUNK, totalPages);
+        const subDoc = await PDFDocument.create();
+        const pageIndices = [];
+        for (let j = i; j < endPage; j++) {
+          pageIndices.push(j);
+        }
+        const copiedPages = await subDoc.copyPages(pdfDoc, pageIndices);
+        copiedPages.forEach(p => subDoc.addPage(p));
+        const subBase64 = await subDoc.saveAsBase64();
+        const chunkResult = await extractChunk(subBase64);
+        if (Array.isArray(chunkResult)) {
+          rawItems.push(...chunkResult);
+        }
+      }
     }
   } catch (err) {
-    console.error("Failed to parse client-side Gemini output:", textOutput);
+    console.warn("Client pdf-lib chunking failed, extracting full document:", err);
+    rawItems = await extractChunk(cleanBase64);
+  }
+
+  let parsedData: any[] = [];
+  if (Array.isArray(rawItems)) {
+    parsedData = rawItems.map((item: any) => {
+      const rawBQty = Number(item.booking_qty || item.wo_qty || item.order_qty) || 0;
+      const cleanBQty = Math.round((rawBQty + Number.EPSILON) * 100) / 100;
+
+      const colorVal = (item.colour || item.color || item.gmts_color || item.item_color || '').toString().trim();
+      const countVal = (item.count || item.item_name || item.item_description || item.description || '').toString().trim();
+      let meterVal = (item.meter || item.cone_meter || item.length || '').toString().trim();
+      if (meterVal.toUpperCase().includes('CM') || meterVal.toLowerCase().includes('114')) {
+        meterVal = '';
+      }
+      const jobNoVal = (item.job_no || item.ref_no_job_no || '').toString().trim();
+      const srGtVal = (item.sr_gt || item.sr_gt_no || item.fabric_booking_no || '').toString().trim();
+      const poNoVal = (item.order_no || item.po_no || '').toString().trim();
+      const buyerVal = (item.buyer || item.buyer_name || 'BESTSELLER A/S').toString().trim();
+      const storeRefVal = (item.s_thread_ref || item.store_ref || item.booking_no || '').toString().trim();
+
+      return {
+        buyer: buyerVal,
+        buyer_name: buyerVal,
+        booking_date: item.booking_date || item.date || '',
+        job_no: jobNoVal,
+        ref_no_job_no: jobNoVal,
+        sr_gt: srGtVal,
+        sr_gt_no: srGtVal,
+        order_no: poNoVal,
+        po_no: poNoVal,
+        s_thread_ref: storeRefVal,
+        store_ref: storeRefVal,
+        style: item.style || '',
+        count: countVal,
+        item_name: countVal,
+        colour: colorVal,
+        color: colorVal,
+        meter: meterVal,
+        size: meterVal,
+        pantone: item.pantone || item.gmts_size || '',
+        booking_qty: cleanBQty,
+        wo_qty: cleanBQty,
+        balance_qty: cleanBQty,
+        due_qty: cleanBQty,
+        receive_qty: 0,
+        issue_qty: 0,
+        supplier: item.supplier || '',
+        remarks: item.remarks || ''
+      };
+    });
   }
 
   return parsedData;
