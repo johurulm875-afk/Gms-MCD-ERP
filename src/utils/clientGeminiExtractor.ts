@@ -54,7 +54,7 @@ CRITICAL EXTRACTION RULES:
 Extract ALL pages thoroughly into a single JSON Array containing ALL items from Page 1 to Page 31.
 `;
 
-  const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest'];
   let response: any = null;
   let lastError: any = null;
 
