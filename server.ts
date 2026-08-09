@@ -48,6 +48,8 @@ app.post('/api/extract-sewing-thread-pdf', async (req, res) => {
       openRouterModel = 'qwen/qwen-2.5-vl-72b-instruct:free'
     } = req.body || {};
 
+    let rawItems: any[] = [];
+
     if (!pdfBase64 && (!Array.isArray(imagesBase64) || imagesBase64.length === 0)) {
       return res.status(400).json({
         success: false,
@@ -214,42 +216,19 @@ Extract ALL individual color breakdown table rows into a JSON Array.
         const orData = openRouterRes;
         const rawText = orData?.choices?.[0]?.message?.content || '';
         const jsonMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        let rawItems: any[] = [];
         if (jsonMatch) {
           try { rawItems = JSON.parse(jsonMatch[0]); } catch {}
         } else {
           try { rawItems = JSON.parse(rawText); } catch {}
         }
-
-        const parsedData = (Array.isArray(rawItems) ? rawItems : []).map((item: any) => ({
-          buyer: item.buyer || item.buyer_name || '',
-          booking_date: item.booking_date || item.date || '',
-          job_no: item.job_no || '',
-          sr_gt: item.sr_gt || item.fabric_booking || '',
-          order_no: item.order_no || item.po_no || '',
-          s_thread_ref: item.s_thread_ref || item.trims_booking || item.booking_no || '',
-          style: item.style || '',
-          count: item.count || item.thread_count || item.item_description || '40/2',
-          colour: item.colour || item.color || item.gmts_color || '',
-          item_color: item.item_color || item.colour || '',
-          meter: String(item.meter || item.cone_length || '4000'),
-          pantone: item.pantone || '',
-          order_qty: Number(item.order_qty) || 0,
-          booking_qty: Number(item.booking_qty || item.wo_qty || item.order_qty) || 0,
-          supplier: item.supplier || '',
-          remarks: item.remarks || '',
-          doc_grand_total: item.doc_grand_total || item.item_total || item.grand_total || null
-        }));
-
-        if (parsedData.length > 0) {
-          return res.json({ success: true, count: parsedData.length, data: parsedData });
+        if (!Array.isArray(rawItems) || rawItems.length === 0) {
+          console.warn(`[OpenRouter Extractor] OpenRouter returned 0 items. Falling back to Gemini API...`);
         }
-        console.warn(`[OpenRouter Extractor] OpenRouter returned 0 items. Falling back to Gemini API...`);
       } else {
         console.warn(`[OpenRouter Extractor] All OpenRouter models failed (${lastOpenRouterErr}). Falling back to Gemini API...`);
       }
 
-      if (!apiKey && !process.env.GEMINI_API_KEY) {
+      if ((!Array.isArray(rawItems) || rawItems.length === 0) && !apiKey && !process.env.GEMINI_API_KEY) {
         return res.status(400).json({
           success: false,
           error: lastOpenRouterErr || 'Failed to extract with OpenRouter models and no Gemini API Key available.'
@@ -257,28 +236,29 @@ Extract ALL individual color breakdown table rows into a JSON Array.
       }
     }
 
-    // 2. Default: Gemini API Extractor
-    const ai = getGenAIClient(apiKey);
+    // 2. Default: Gemini API Extractor (if OpenRouter was not used or yielded 0 items)
+    if (!Array.isArray(rawItems) || rawItems.length === 0) {
+      const ai = getGenAIClient(apiKey);
 
-    const isRateLimitError = (err: any): boolean => {
-      if (!err) return false;
-      const errStr = String(err?.message || err).toLowerCase();
-      return (
-        errStr.includes('429') ||
-        errStr.includes('quota') ||
-        errStr.includes('resource_exhausted') ||
-        errStr.includes('rate limit') ||
-        errStr.includes('rate-limit') ||
-        errStr.includes('free tier') ||
-        errStr.includes('limit reached')
-      );
-    };
+      const isRateLimitError = (err: any): boolean => {
+        if (!err) return false;
+        const errStr = String(err?.message || err).toLowerCase();
+        return (
+          errStr.includes('429') ||
+          errStr.includes('quota') ||
+          errStr.includes('resource_exhausted') ||
+          errStr.includes('rate limit') ||
+          errStr.includes('rate-limit') ||
+          errStr.includes('free tier') ||
+          errStr.includes('limit reached')
+        );
+      };
 
-    const isUnavailableError = (err: any): boolean => {
-      if (!err) return false;
-      const errStr = String(err?.message || err).toLowerCase();
-      return errStr.includes('503') || errStr.includes('unavailable') || errStr.includes('high demand');
-    };
+      const isUnavailableError = (err: any): boolean => {
+        if (!err) return false;
+        const errStr = String(err?.message || err).toLowerCase();
+        return errStr.includes('503') || errStr.includes('unavailable') || errStr.includes('high demand');
+      };
 
     // Extract chunk using Gemini API
     const extractChunk = async (chunkData: { data: string; mimeType: string }[]): Promise<any[]> => {
@@ -377,7 +357,7 @@ Extract ALL individual color breakdown table rows into a JSON Array.
       }
     };
 
-    let rawItems: any[] = [];
+    rawItems = [];
 
     if (Array.isArray(imagesBase64) && imagesBase64.length > 0) {
       console.log(`[Image Extractor] Processing ${imagesBase64.length} image files via Gemini API...`);
@@ -452,9 +432,10 @@ Extract ALL individual color breakdown table rows into a JSON Array.
         rawItems = await extractChunk([{ data: cleanBase64, mimeType: 'application/pdf' }]);
       }
     }
+  }
 
 // Helper function to check if a header string is valid and not a placeholder/total
-function isValidHeaderValue(val: any): boolean {
+const isValidHeaderValue = (val: any): boolean => {
   if (val === null || val === undefined) return false;
   const s = val.toString().trim();
   if (s.length === 0) return false;
@@ -469,10 +450,10 @@ function isValidHeaderValue(val: any): boolean {
   if (u.includes('TOTAL') || u.includes('SUMMARY') || u.includes('RECAP')) return false;
 
   return true;
-}
+};
 
 // Helper function to forward-fill header info across multi-page / continuation rows
-function forwardFillHeaderInfo(items: any[]): any[] {
+const forwardFillHeaderInfo = (items: any[]): any[] => {
   if (!Array.isArray(items) || items.length === 0) return items;
 
   let activeHeader = {
@@ -601,7 +582,7 @@ function forwardFillHeaderInfo(items: any[]): any[] {
       meter: finalMeter
     };
   });
-}
+};
 
     let parsedData: any[] = [];
     if (Array.isArray(rawItems)) {
@@ -658,32 +639,20 @@ function forwardFillHeaderInfo(items: any[]): any[] {
       const filled = forwardFillHeaderInfo(mapped);
 
       const filtered = filled.filter((item: any) => {
-        const col = item.colour.toUpperCase();
-        const job = item.job_no;
+        const col = (item.colour || item.color || item.pantone || item.shade_no || '').toString().toUpperCase().trim();
+        const job = (item.job_no || '').toString();
         // Skip summary rows where color is a single digit and no valid job/po exists
         if (/^\d{1,2}$/.test(col) && (!job || job.includes(','))) return false;
         // Skip summary rows with summary keywords
-        if (col.includes('TOTAL') || col.includes('SUMMARY') || col.includes('RECAP') || col.includes('GRAND')) return false;
+        if (col.includes('TOTAL') || col.includes('SUMMARY') || col.includes('RECAP') || col.includes('GRAND TOTAL')) return false;
         // Skip if job_no is a comma-separated list of multiple job numbers from summary table
         if (job.includes(',')) return false;
-        // Must have valid color and positive quantity
-        return col.length > 0 && item.booking_qty > 0;
+        // Must have positive quantity
+        return Number(item.booking_qty) > 0;
       });
 
-      // Safely deduplicate items by job + po + colour + qty
-      const seenKeys = new Set<string>();
-      parsedData = [];
-      for (const item of filtered) {
-        const j = (item.job_no || '').toString().trim().toUpperCase();
-        const p = (item.order_no || '').toString().trim().toUpperCase();
-        const c = (item.colour || '').toString().trim().toUpperCase();
-        const q = Number(item.booking_qty) || 0;
-        const key = `${j}|${p}|${c}|${q}`;
-        if (!seenKeys.has(key)) {
-          seenKeys.add(key);
-          parsedData.push(item);
-        }
-      }
+      // Retain ALL extracted table rows accurately without dropping duplicate quantities
+      parsedData = filtered;
     }
 
     return res.json({

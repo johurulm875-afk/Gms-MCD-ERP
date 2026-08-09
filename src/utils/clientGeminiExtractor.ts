@@ -12,28 +12,10 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-// Exported Helper function to deduplicate extracted items safely without dropping valid rows
+// Exported Helper function to return extracted items while keeping all valid table rows
 export function deduplicateExtractedItems(items: any[]): any[] {
   if (!Array.isArray(items)) return [];
-  const seen = new Set<string>();
-  const result: any[] = [];
-
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const job = (item.job_no || item.ref_no_job_no || '').toString().trim().toUpperCase();
-    const po = (item.order_no || item.po_no || '').toString().trim().toUpperCase();
-    const col = (item.colour || item.color || '').toString().trim().toUpperCase();
-    const shade = (item.pantone || item.shade_no || '').toString().trim().toUpperCase();
-    const meter = (item.meter || '').toString().trim().toUpperCase();
-    const qty = Number(item.booking_qty || item.wo_qty) || 0;
-
-    const key = (job || po || col) ? `${job}|${po}|${col}|${shade}|${meter}|${qty}` : `idx_${i}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push(item);
-    }
-  }
-  return result;
+  return items;
 }
 
 // Helper function to check if a header string is valid and not a placeholder/total

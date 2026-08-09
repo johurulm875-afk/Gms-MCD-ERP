@@ -224,10 +224,8 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
           setPageProgress({ current: i + 1, total: pages.length });
           setAnalysisStatus(`Extracting Page ${pageObj.pageNum} of ${totalPagesCount}... (${accumulatedItems.length} items found so far)`);
 
-          // Pass Page 1 image as reference header image for continuation pages (page 2+)
-          const singlePageImage = (i > 0 && pages[0]?.dataUrl)
-            ? [pages[0].dataUrl, pageObj.dataUrl]
-            : [pageObj.dataUrl];
+          // Extract page image cleanly (forwardFillHeaderInfo handles cross-page header inheritance)
+          const singlePageImage = [pageObj.dataUrl];
           let pageItems: any[] = [];
 
           try {
