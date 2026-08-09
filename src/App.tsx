@@ -132,9 +132,7 @@ export default function App() {
   const [isSewingLoading, setIsSewingLoading] = useState<boolean>(false);
 
   useEffect(() => {
-    if (sewingThreadItems.length > 0) {
-      localStorage.setItem('sewing_thread_items', JSON.stringify(sewingThreadItems));
-    }
+    localStorage.setItem('sewing_thread_items', JSON.stringify(sewingThreadItems));
   }, [sewingThreadItems]);
 
   // Drawstring State
@@ -909,8 +907,10 @@ export default function App() {
 
         setSewingThreadItems(finalMerged);
         localStorage.setItem('sewing_thread_items', JSON.stringify(finalMerged));
-      } else if (localItems.length > 0) {
-        setSewingThreadItems(localItems);
+      } else {
+        // If Supabase table has 0 records (e.g. user deleted all rows in Supabase), clear state & cache
+        setSewingThreadItems([]);
+        localStorage.removeItem('sewing_thread_items');
       }
     } catch (err) {
       console.warn("Sewing thread connection notice:", err);

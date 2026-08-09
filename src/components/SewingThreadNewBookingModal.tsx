@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { SewingThreadItem } from '../types';
-import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle, Upload, FileText, Loader2, ArrowRight, Key, RefreshCw } from 'lucide-react';
-import { extractPdfClientSide } from '../utils/clientGeminiExtractor';
+import { X, Plus, Package, Tag, Save, Sparkles, CheckCircle2, AlertTriangle, Upload, FileText, Loader2, ArrowRight, Key, RefreshCw, Layers } from 'lucide-react';
+import { extractPdfClientSide, forwardFillHeaderInfo, deduplicateExtractedItems } from '../utils/clientGeminiExtractor';
+import { convertPdfToJpegImages, getPdfTotalPages } from '../utils/pdfToImage';
 
 interface SewingThreadNewBookingModalProps {
   isOpen: boolean;
@@ -82,14 +83,28 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
 
   // AI PDF / Image Extractor state
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
+  const [pageProgress, setPageProgress] = useState<{ current: number; total: number } | null>(null);
+  const [pdfTotalPages, setPdfTotalPages] = useState<number | null>(null);
+  const [pageRangeMode, setPageRangeMode] = useState<'all' | 'range'>('all');
+  const [startPageInput, setStartPageInput] = useState<number>(1);
+  const [endPageInput, setEndPageInput] = useState<string>('');
+
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [extractedItems, setExtractedItems] = useState<any[] | null>(null);
+  const [detectedDocGrandTotal, setDetectedDocGrandTotal] = useState<number | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [lastUploadedFiles, setLastUploadedFiles] = useState<File[] | null>(null);
   const [userApiKey, setUserApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
   const [aiProvider, setAiProvider] = useState<'gemini' | 'openrouter'>(() => (localStorage.getItem('ai_provider') as 'gemini' | 'openrouter') || 'gemini');
   const [openRouterKey, setOpenRouterKey] = useState<string>(() => localStorage.getItem('openrouter_api_key') || '');
-  const [openRouterModel, setOpenRouterModel] = useState<string>(() => localStorage.getItem('openrouter_model') || 'qwen/qwen-2.5-vl-72b-instruct:free');
+  const [openRouterModel, setOpenRouterModel] = useState<string>(() => {
+    const saved = localStorage.getItem('openrouter_model');
+    if (!saved || saved === 'qwen/qwen-2.5-vl-72b-instruct:free') {
+      return 'qwen/qwen-2.5-vl-72b-instruct';
+    }
+    return saved;
+  });
   const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,15 +123,17 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
     setLastUploadedFiles(fileList);
     setIsAnalyzingPdf(true);
     setPdfError(null);
+    setDetectedDocGrandTotal(null);
+    setAnalysisStatus("Loading file(s)...");
+    setPageProgress(null);
     const uploadedNames = fileList.map(f => f.name).join(', ');
     setPdfFileName(uploadedNames);
 
     try {
-      let items: any[] = [];
-      let isBackendSuccess = false;
+      let accumulatedItems: any[] = [];
 
       if (imageFiles.length > 0) {
-        // Read images as Base64 data URLs
+        // Handle images 1 by 1
         const readPromises = imageFiles.map(file => new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
@@ -126,51 +143,54 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
 
         const imagesBase64 = await Promise.all(readPromises);
 
-        // 1. Try backend API
-        try {
-          const res = await fetch('/api/extract-sewing-thread-pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              imagesBase64,
-              aiProvider,
-              apiKey: userApiKey || undefined,
-              openRouterKey: openRouterKey || undefined,
-              openRouterModel
-            })
-          });
+        for (let i = 0; i < imagesBase64.length; i++) {
+          setPageProgress({ current: i + 1, total: imagesBase64.length });
+          setAnalysisStatus(`Extracting Image ${i + 1} of ${imagesBase64.length}... (${accumulatedItems.length} items found so far)`);
 
-          const rawText = await res.text();
-          if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
-            const data = JSON.parse(rawText);
-            if (res.ok && data.success && Array.isArray(data.data)) {
-              items = data.data;
-              isBackendSuccess = true;
-            } else if (data.error) {
-              const errStr = String(data.error);
-              if (res.status === 429 || errStr.includes('429') || errStr.includes('quota')) {
-                throw new Error("Gemini free limit reached. Switch to Qwen OpenRouter Key below or wait 15 seconds.");
+          const singleImage = [imagesBase64[i]];
+          let pageItems: any[] = [];
+
+          try {
+            const res = await fetch('/api/extract-sewing-thread-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                imagesBase64: singleImage,
+                aiProvider,
+                apiKey: userApiKey || undefined,
+                openRouterKey: openRouterKey || undefined,
+                openRouterModel
+              })
+            });
+
+            const rawText = await res.text();
+            if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
+              const data = JSON.parse(rawText);
+              if (res.ok && data.success && Array.isArray(data.data)) {
+                pageItems = data.data;
+              } else if (data.error) {
+                const errStr = String(data.error);
+                if (res.status === 429 || errStr.includes('429') || errStr.includes('quota')) {
+                  throw new Error("Gemini free limit reached. Switch to Qwen OpenRouter Key or wait 15 seconds.");
+                }
+                throw new Error(errStr);
               }
-              throw new Error(errStr);
             }
+          } catch (backendErr) {
+            console.warn(`Backend error on image ${i + 1}, falling back to client extractor:`, backendErr);
+            pageItems = await extractPdfClientSide(
+              singleImage,
+              'image/jpeg',
+              userApiKey,
+              { aiProvider, openRouterKey, openRouterModel }
+            );
           }
-        } catch (backendErr: any) {
-          console.warn("Backend error, trying client extractor:", backendErr);
-          if (backendErr.message && (backendErr.message.includes('429') || backendErr.message.includes('Key') || backendErr.message.includes('OpenRouter'))) {
-            throw backendErr;
+
+          if (Array.isArray(pageItems) && pageItems.length > 0) {
+            accumulatedItems = [...accumulatedItems, ...pageItems];
+            setExtractedItems(prev => [...(prev || []), ...pageItems]);
           }
         }
-
-        // 2. Client-side fallback
-        if (!isBackendSuccess) {
-          items = await extractPdfClientSide(
-            imagesBase64,
-            'image/jpeg',
-            userApiKey,
-            { aiProvider, openRouterKey, openRouterModel }
-          );
-        }
-
       } else if (pdfFile) {
         const base64Data = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -179,61 +199,91 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
           reader.readAsDataURL(pdfFile);
         });
 
-        // 1. Try backend API
-        try {
-          const res = await fetch('/api/extract-sewing-thread-pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              pdfBase64: base64Data,
-              mimeType: 'application/pdf',
-              aiProvider,
-              apiKey: userApiKey || undefined,
-              openRouterKey: openRouterKey || undefined,
-              openRouterModel
-            })
-          });
+        setAnalysisStatus("Counting PDF pages...");
+        const totalPagesCount = await getPdfTotalPages(base64Data);
+        setPdfTotalPages(totalPagesCount);
 
-          const rawText = await res.text();
-          if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
-            const data = JSON.parse(rawText);
-            if (res.ok && data.success && Array.isArray(data.data)) {
-              items = data.data;
-              isBackendSuccess = true;
-            } else if (data.error) {
-              const errStr = String(data.error);
-              if (res.status === 429 || errStr.includes('429') || errStr.includes('quota')) {
-                throw new Error("Gemini free limit reached. Switch to Qwen OpenRouter Key below or wait 15 seconds.");
-              }
-              throw new Error(errStr);
-            }
-          }
-        } catch (backendErr: any) {
-          console.warn("Backend API error:", backendErr);
-          if (backendErr.message && (backendErr.message.includes('429') || backendErr.message.includes('Key') || backendErr.message.includes('OpenRouter'))) {
-            throw backendErr;
-          }
+        let sPage = 1;
+        let ePage = totalPagesCount;
+
+        if (pageRangeMode === 'range') {
+          sPage = Math.max(1, startPageInput || 1);
+          ePage = endPageInput ? Math.min(totalPagesCount, Math.max(sPage, Number(endPageInput) || totalPagesCount)) : totalPagesCount;
         }
 
-        if (!isBackendSuccess) {
-          items = await extractPdfClientSide(
-            base64Data,
-            'application/pdf',
-            userApiKey,
-            { aiProvider, openRouterKey, openRouterModel }
-          );
+        setAnalysisStatus(`Rendering page(s) ${sPage} to ${ePage} of ${totalPagesCount}...`);
+        const { pages } = await convertPdfToJpegImages(base64Data, sPage, ePage);
+
+        if (!pages || pages.length === 0) {
+          throw new Error("Could not render selected pages from PDF.");
+        }
+
+        // Automatic page-by-page extraction loop!
+        for (let i = 0; i < pages.length; i++) {
+          const pageObj = pages[i];
+          setPageProgress({ current: i + 1, total: pages.length });
+          setAnalysisStatus(`Extracting Page ${pageObj.pageNum} of ${totalPagesCount}... (${accumulatedItems.length} items found so far)`);
+
+          // Pass Page 1 image as reference header image for continuation pages (page 2+)
+          const singlePageImage = (i > 0 && pages[0]?.dataUrl)
+            ? [pages[0].dataUrl, pageObj.dataUrl]
+            : [pageObj.dataUrl];
+          let pageItems: any[] = [];
+
+          try {
+            const res = await fetch('/api/extract-sewing-thread-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                imagesBase64: singlePageImage,
+                aiProvider,
+                apiKey: userApiKey || undefined,
+                openRouterKey: openRouterKey || undefined,
+                openRouterModel
+              })
+            });
+
+            const rawText = await res.text();
+            if (rawText && !rawText.startsWith('<') && !rawText.includes('<html>')) {
+              const data = JSON.parse(rawText);
+              if (res.ok && data.success && Array.isArray(data.data)) {
+                pageItems = data.data;
+              } else if (data.error) {
+                const errStr = String(data.error);
+                if (res.status === 429 || errStr.includes('429') || errStr.includes('quota')) {
+                  throw new Error("Gemini free limit reached. Switch to Qwen OpenRouter Key below or wait 15 seconds.");
+                }
+                throw new Error(errStr);
+              }
+            }
+          } catch (backendErr: any) {
+            console.warn(`Backend error on page ${pageObj.pageNum}, falling back to client extractor:`, backendErr);
+            pageItems = await extractPdfClientSide(
+              singlePageImage,
+              'image/jpeg',
+              userApiKey,
+              { aiProvider, openRouterKey, openRouterModel }
+            );
+          }
+
+          if (Array.isArray(pageItems) && pageItems.length > 0) {
+            accumulatedItems = deduplicateExtractedItems(forwardFillHeaderInfo([...accumulatedItems, ...pageItems]));
+            for (const item of pageItems) {
+              if (item.doc_grand_total && !isNaN(Number(item.doc_grand_total))) {
+                const gTotalVal = Number(item.doc_grand_total);
+                if (gTotalVal > 0) {
+                  setDetectedDocGrandTotal(gTotalVal);
+                }
+              }
+            }
+            // Update UI in real-time with forward-filled cumulative items!
+            setExtractedItems(accumulatedItems);
+          }
         }
       }
 
-      if (!Array.isArray(items) || items.length === 0) {
-        setPdfError("No thread booking rows could be extracted from the uploaded document/images. Please check document format.");
-      } else {
-        // Offer merging if items already exist
-        if (extractedItems && extractedItems.length > 0) {
-          setExtractedItems(prev => [...(prev || []), ...items]);
-        } else {
-          setExtractedItems(items);
-        }
+      if (accumulatedItems.length === 0) {
+        setPdfError("No thread booking rows could be extracted from the document. Please verify page range or document formatting.");
       }
     } catch (err: any) {
       console.error("Extraction Error:", err);
@@ -250,6 +300,8 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
       setPdfError(msg || "An error occurred while parsing document.");
     } finally {
       setIsAnalyzingPdf(false);
+      setAnalysisStatus(null);
+      setPageProgress(null);
     }
   };
 
@@ -363,10 +415,10 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
         return {
           buyer: bName,
           buyer_name: bName,
-          date: getTodayFormatted(),
+          date: item.booking_date || item.date || getTodayFormatted(),
           booking_challan: '',
           style: item.style || '',
-          order_no: item.order_no || '',
+          order_no: item.order_no || item.po_no || '',
           sr_gt: item.sr_gt || '',
           store_ref: stRef,
           s_thread_ref: stRef,
@@ -378,7 +430,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
           thread_count: tCount,
           shade_no: sNo,
           pantone: sNo,
-          meter: (item.meter && !String(item.meter).toUpperCase().includes('CM') && !String(item.meter).includes('114')) ? String(item.meter) : '',
+          meter: (item.meter && !String(item.meter).toUpperCase().includes('CM') && !String(item.meter).includes('114')) ? String(item.meter) : '4000',
           per_body_consm: item.per_body_consm != null ? String(item.per_body_consm) : '',
           supplier: item.supplier || '',
           qc_not_ok: false,
@@ -723,11 +775,11 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                     </div>
                   </div>
                 ) : (
-                  /* OpenRouter Qwen Settings */
+                  /* OpenRouter Settings */
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="block text-[11px] font-semibold text-indigo-300">
-                        OpenRouter API Key (Free model support):
+                        OpenRouter API Key & Preferred Vision Model:
                       </label>
                       <a
                         href="https://openrouter.ai/keys"
@@ -738,7 +790,7 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                         Get free key at openrouter.ai ↗
                       </a>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input
                         type="password"
                         placeholder="sk-or-v1-..."
@@ -747,19 +799,116 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                           setOpenRouterKey(e.target.value);
                           localStorage.setItem('openrouter_api_key', e.target.value);
                         }}
-                        className="flex-1 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-white font-mono text-xs outline-none"
+                        className="flex-1 min-w-[200px] bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-white font-mono text-xs outline-none"
                       />
+                      <select
+                        value={openRouterModel}
+                        onChange={(e) => {
+                          setOpenRouterModel(e.target.value);
+                          localStorage.setItem('openrouter_model', e.target.value);
+                        }}
+                        className="bg-slate-950 border border-slate-800 text-indigo-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500"
+                      >
+                        <option value="qwen/qwen-2.5-vl-72b-instruct">Qwen 2.5 Vision (72B)</option>
+                        <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free)</option>
+                        <option value="meta-llama/llama-3.2-11b-vision-instruct:free">Llama 3.2 Vision (Free)</option>
+                        <option value="openrouter/auto">Auto Route (OpenRouter)</option>
+                      </select>
                       <button
                         type="button"
                         onClick={() => {
                           localStorage.setItem('openrouter_api_key', openRouterKey);
+                          localStorage.setItem('openrouter_model', openRouterModel);
                           setShowApiKeyInput(false);
                         }}
                         className="px-3 py-1.5 bg-indigo-500 text-white font-bold rounded-lg text-xs hover:bg-indigo-400 transition-colors cursor-pointer"
                       >
-                        Save Key
+                        Save
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {/* PDF Page Extraction Settings */}
+                <div className="pt-2 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-amber-400" />
+                      <span>PDF Page Extraction Mode:</span>
+                    </label>
+                    {pdfTotalPages && (
+                      <span className="text-[10px] text-amber-400 font-mono font-semibold bg-amber-950/80 border border-amber-800/60 px-2 py-0.5 rounded">
+                        {pdfTotalPages} Pages Detected
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                    <label className="flex items-center gap-1.5 cursor-pointer font-medium hover:text-white">
+                      <input
+                        type="radio"
+                        name="pageRangeMode"
+                        checked={pageRangeMode === 'all'}
+                        onChange={() => setPageRangeMode('all')}
+                        className="accent-amber-500 cursor-pointer"
+                      />
+                      <span>Extract All Pages (1 page at a time)</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer font-medium hover:text-white">
+                      <input
+                        type="radio"
+                        name="pageRangeMode"
+                        checked={pageRangeMode === 'range'}
+                        onChange={() => setPageRangeMode('range')}
+                        className="accent-amber-500 cursor-pointer"
+                      />
+                      <span>Specific Page Range:</span>
+                    </label>
+                    {pageRangeMode === 'range' && (
+                      <div className="flex items-center gap-1.5 font-mono text-xs bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+                        <span>Page</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={startPageInput}
+                          onChange={(e) => setStartPageInput(Math.max(1, Number(e.target.value)))}
+                          className="w-12 bg-slate-900 border border-slate-700 text-amber-300 font-bold rounded px-1.5 py-0.5 text-center outline-none focus:border-amber-500"
+                        />
+                        <span>to</span>
+                        <input
+                          type="number"
+                          min={startPageInput}
+                          placeholder={pdfTotalPages ? String(pdfTotalPages) : "End"}
+                          value={endPageInput}
+                          onChange={(e) => setEndPageInput(e.target.value)}
+                          className="w-12 bg-slate-900 border border-slate-700 text-amber-300 font-bold rounded px-1.5 py-0.5 text-center outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Live Page-by-Page Progress Banner */}
+            {isAnalyzingPdf && (
+              <div className="p-4 bg-slate-900/90 border border-indigo-500/50 rounded-xl space-y-2.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5 font-bold text-indigo-200">
+                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400 shrink-0" />
+                    <span>{analysisStatus || 'Analyzing PDF page by page...'}</span>
+                  </div>
+                  {pageProgress && (
+                    <span className="font-mono bg-indigo-950 border border-indigo-800 px-2.5 py-1 rounded-md text-xs font-bold text-indigo-300 shrink-0">
+                      Page {pageProgress.current} / {pageProgress.total}
+                    </span>
+                  )}
+                </div>
+                {pageProgress && pageProgress.total > 0 && (
+                  <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
+                    <div
+                      className="bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 h-full transition-all duration-300"
+                      style={{ width: `${Math.round((pageProgress.current / pageProgress.total) * 100)}%` }}
+                    />
                   </div>
                 )}
               </div>
@@ -870,6 +1019,89 @@ export const SewingThreadNewBookingModal: React.FC<SewingThreadNewBookingModalPr
                     );
                   })}
                 </div>
+
+                {/* Grand Total Check & Comparison Card */}
+                {(() => {
+                  const convertedTotal = Math.round((extractedItems.reduce((acc, it) => acc + (Number(it.booking_qty) || 0), 0) + Number.EPSILON) * 100) / 100;
+                  const pdfGrandTotal = detectedDocGrandTotal;
+                  const hasPdfTotal = pdfGrandTotal !== null && pdfGrandTotal > 0;
+                  const isMatch = hasPdfTotal ? Math.abs(convertedTotal - pdfGrandTotal) < 0.1 : null;
+
+                  return (
+                    <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2.5 mt-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Tag className="w-4 h-4 text-amber-400" />
+                          <span className="text-xs font-bold text-white">Grand Total Verification Check</span>
+                        </div>
+                        {hasPdfTotal && (
+                          <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 ${
+                            isMatch 
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                          }`}>
+                            {isMatch ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Totals Match! (100% Accurately Processed)</span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                                <span>Quantity Mismatch Detected!</span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        {/* Extracted Cones Sum */}
+                        <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400 font-medium">
+                            Converted File Grand Total ({extractedItems.length} items)
+                          </div>
+                          <div className="text-lg font-black text-amber-400 font-mono">
+                            {convertedTotal.toLocaleString()} <span className="text-xs font-bold text-slate-300">Cones</span>
+                          </div>
+                        </div>
+
+                        {/* Printed PDF Grand Total */}
+                        <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                          <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-400 font-medium">
+                            <span>Printed PDF Grand Total</span>
+                            <span className="text-[9px] text-slate-500">(Auto-detected / Editable)</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="any"
+                              placeholder="Enter Printed Total..."
+                              value={detectedDocGrandTotal !== null ? detectedDocGrandTotal : ''}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? null : Number(e.target.value);
+                                setDetectedDocGrandTotal(val);
+                              }}
+                              className="w-full bg-slate-950 text-emerald-300 font-mono font-bold text-base px-2.5 py-1 rounded border border-slate-700 focus:outline-none focus:border-emerald-500"
+                            />
+                            <span className="text-xs font-bold text-slate-300 shrink-0">Cones</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {hasPdfTotal && !isMatch && (
+                        <div className="p-2 bg-rose-950/40 border border-rose-800/60 rounded-lg text-[11px] text-rose-300 flex items-center justify-between">
+                          <span>
+                            ⚠️ Converted items total (<strong>{convertedTotal}</strong>) differs from printed PDF total (<strong>{pdfGrandTotal}</strong>).
+                          </span>
+                          <span className="font-mono font-bold text-rose-200 bg-rose-900/60 px-2 py-0.5 rounded border border-rose-700/60">
+                            Diff: {Math.round((convertedTotal - pdfGrandTotal) * 100) / 100} Cones
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

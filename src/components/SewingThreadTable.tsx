@@ -48,7 +48,7 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
   const [generalSearch, setGeneralSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [sortField, setSortField] = useState<keyof SewingThreadItem>('id');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Quick Action Bar Search State
   const [quickStoreRefSearch, setQuickStoreRefSearch] = useState<string>('');
@@ -243,7 +243,14 @@ export const SewingThreadTable: React.FC<SewingThreadTableProps> = ({
       { header: 'Remarks', key: 'remarks', width: 20, align: 'left' }
     ];
 
-    const formattedData = filteredItems.map((i) => ({
+    // Ensure exported items are sorted in strict sequential order (Page 1 -> Page 2)
+    const sortedForExport = [...filteredItems].sort((a, b) => {
+      const idA = Number(a.id) || 0;
+      const idB = Number(b.id) || 0;
+      return idA - idB;
+    });
+
+    const formattedData = sortedForExport.map((i) => ({
       ...i,
       buyer_name_display: i.buyer_name || i.buyer || '',
       store_ref_display: i.s_thread_ref || i.store_ref || '',
